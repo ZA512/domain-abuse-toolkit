@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
@@ -37,6 +38,7 @@ package_root = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=package_root / "resources" / "web_templates")
 
 case_service = CaseService(EvidenceStore(settings.data_dir), DraftService())
+form_csrf_token = secrets.token_urlsafe(32)
 
 app = FastAPI(
     title="Domain Abuse Toolkit",
@@ -53,7 +55,12 @@ app.mount(
 @app.middleware("http")
 async def security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
     response = None
-    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+    if request.url.path.startswith("/api/") and request.method in {
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+    }:
         origin = request.headers.get("origin")
         fetch_site = request.headers.get("sec-fetch-site")
         allowed_origins = {
@@ -86,6 +93,14 @@ def _mailto(draft: Draft) -> str:
         safe="",
     )
     return f"mailto:?{query}"
+
+
+def _verify_form_csrf(token: str) -> None:
+    if not token or not secrets.compare_digest(token, form_csrf_token):
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid or expired form token. Refresh the page.",
+        )
 
 
 def _case_context(
@@ -128,6 +143,7 @@ def _case_context(
         "history": history,
         "criticalities": list(Criticality),
         "qualification_error": qualification_error,
+        "form_csrf_token": form_csrf_token,
         "capabilities": case_service.capabilities(settings),
         "pilot_notice": True,
     }
@@ -160,6 +176,7 @@ def home(request: Request):  # type: ignore[no-untyped-def]
             "load_warnings": case_service.load_warnings,
             "error": None,
             "form": {},
+            "form_csrf_token": form_csrf_token,
         },
     )
 
@@ -174,7 +191,9 @@ def create_case_form(
     urgency: Annotated[Urgency, Form()] = Urgency.NORMAL,
     campaign: Annotated[str | None, Form(max_length=200)] = None,
     notes: Annotated[str | None, Form(max_length=4000)] = None,
+    csrf_token: Annotated[str, Form(alias="_csrf_token")] = "",
 ):  # type: ignore[no-untyped-def]
+    _verify_form_csrf(csrf_token)
     intake = CaseCreate(
         target=target,
         brand=brand,
@@ -199,6 +218,7 @@ def create_case_form(
                 "load_warnings": case_service.load_warnings,
                 "error": str(exc),
                 "form": intake.model_dump(mode="json"),
+                "form_csrf_token": form_csrf_token,
             },
             status_code=422,
         )
@@ -228,7 +248,9 @@ def submit_qualification_form(
     related_case_or_campaign: Annotated[bool, Form()] = False,
     publicly_available: Annotated[bool, Form()] = False,
     override_reason: Annotated[str | None, Form(max_length=1000)] = None,
+    csrf_token: Annotated[str, Form(alias="_csrf_token")] = "",
 ):  # type: ignore[no-untyped-def]
+    _verify_form_csrf(csrf_token)
     try:
         submission = QualificationSubmission(
             brand_represented=brand_represented,
@@ -266,7 +288,9 @@ def update_action_form(
     case_id: str,
     action_code: str,
     completed: Annotated[bool, Form()],
+    csrf_token: Annotated[str, Form(alias="_csrf_token")] = "",
 ):  # type: ignore[no-untyped-def]
+    _verify_form_csrf(csrf_token)
     try:
         case_service.set_action_completed(case_id, action_code, completed=completed)
     except CaseNotFoundError as exc:

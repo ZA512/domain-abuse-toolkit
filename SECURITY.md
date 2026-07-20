@@ -21,4 +21,6 @@ Use synthetic examples in tests and documentation. The reserved domains `example
 
 Every submitted URL and every byte returned by a target is hostile input. Collectors must defend against SSRF, DNS rebinding, redirect-to-private-network attacks, oversized responses, decompression bombs, hostile markup, prompt injection, and unsafe browser behavior.
 
+Local HTML state changes require an unguessable per-process form token. JSON APIs reject state-changing requests carrying a cross-site browser origin.
+
 See [docs/security-and-evidence.md](docs/security-and-evidence.md) for the detailed control model.

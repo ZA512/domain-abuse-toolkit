@@ -1,9 +1,17 @@
 import importlib
+import re
 
 import pytest
 from fastapi.testclient import TestClient
 
 from domain_abuse_toolkit.config import get_settings
+
+
+def _csrf_token(client: TestClient, path: str = "/") -> str:
+    response = client.get(path)
+    match = re.search(r'name="_csrf_token" value="([^"]+)"', response.text)
+    assert match is not None
+    return match.group(1)
 
 
 @pytest.fixture
@@ -24,6 +32,20 @@ def test_health_and_home(client: TestClient) -> None:
     assert home.status_code == 200
     assert "Turn a suspicious URL into an actionable case" in home.text
     assert home.headers["x-frame-options"] == "DENY"
+
+
+def test_html_forms_require_a_valid_local_csrf_token(client: TestClient) -> None:
+    payload = {
+        "target": "https://shop.example.net/",
+        "brand": "Example Brand",
+        "legit_url": "https://www.example.com/",
+    }
+    rejected = client.post("/cases", data=payload)
+    assert rejected.status_code == 403
+
+    payload["_csrf_token"] = _csrf_token(client)
+    accepted = client.post("/cases", data=payload, follow_redirects=False)
+    assert accepted.status_code == 303
 
 
 def test_create_case_api_has_no_external_side_effect(client: TestClient) -> None:
@@ -134,7 +156,11 @@ def test_qualification_form_redirects_back_with_human_readable_error(
 
     response = client.post(
         f"/cases/{created['id']}/qualification",
-        data={"confirmed_criticality": "low", "reviewer": "MG"},
+        data={
+            "confirmed_criticality": "low",
+            "reviewer": "MG",
+            "_csrf_token": _csrf_token(client, f"/cases/{created['id']}"),
+        },
         follow_redirects=False,
     )
 

@@ -40,6 +40,7 @@
     {% if qualification_error %}<div class="alert" role="alert">{{ qualification_error }}</div>{% endif %}
 
     <form action="/cases/{{ case.id }}/qualification" method="post" class="qualification-form">
+      <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
       <fieldset class="decision-list">
         <legend>Review checklist</legend>
         <label class="decision"><input type="checkbox" name="brand_represented"{% if q and q.brand_represented %} checked{% endif %}><span><strong>Selected brand is represented</strong><small>Logo, name, identity or an unambiguous reference.</small></span></label>
@@ -94,6 +95,7 @@
               {% endif %}
             </div>
             <form action="/cases/{{ case.id }}/actions/{{ item.action.code }}" method="post">
+              <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
               <input type="hidden" name="completed" value="{{ 'false' if item.action.completed_at else 'true' }}">
               <button class="button button-small" type="submit">{{ "Reopen" if item.action.completed_at else "Mark complete" }}</button>
             </form>

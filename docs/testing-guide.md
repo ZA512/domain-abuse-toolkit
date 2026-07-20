@@ -62,7 +62,7 @@ La fenêtre doit terminer par :
 
 ```text
 All checks passed!
-31 passed
+32 passed
 SUCCES - tous les controles passent.
 ```
 

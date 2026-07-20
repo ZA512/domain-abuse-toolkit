@@ -27,6 +27,7 @@
       {% if error %}<div class="alert" role="alert">{{ error }}</div>{% endif %}
 
       <form action="/cases" method="post" class="case-form">
+        <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
         <label>
           Suspicious URL
           <input name="target" type="text" required maxlength="4096" placeholder="https://suspicious.example/path" value="{{ form.target or '' }}">
