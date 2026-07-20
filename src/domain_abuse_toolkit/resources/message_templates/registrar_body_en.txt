@@ -1,0 +1,15 @@
+Dear Abuse Team,
+
+We are preparing a report concerning {{ url }}, which appears to impersonate the {{ brand }} brand associated with {{ legit_url }}.
+
+The current proposed classification is: {{ suspicion_type }}. This statement is based on observations that must be validated by an authorized reviewer before this draft is sent.
+
+The evidence package should include the exact URL, UTC collection time, screenshots, and available DNS, registration, HTTP, TLS, IP, and network observations.
+
+Please investigate this domain and take appropriate action if the reported abuse is confirmed. Please acknowledge receipt and provide any external reference or expected handling timeline.
+
+Kind regards,
+[SENDER NAME]
+[ROLE]
+[COMPANY]
+

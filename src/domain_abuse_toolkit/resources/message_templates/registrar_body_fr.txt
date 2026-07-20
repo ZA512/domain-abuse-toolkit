@@ -1,0 +1,15 @@
+Bonjour,
+
+Nous préparons un signalement concernant {{ url }}, qui semble usurper la marque {{ brand }} associée au site légitime {{ legit_url }}.
+
+La qualification actuellement proposée est : {{ suspicion_type }}. Cette formulation repose sur des observations qui doivent être validées par une personne autorisée avant tout envoi de ce brouillon.
+
+Le dossier de preuve doit inclure l’URL exacte, l’heure de collecte UTC, les captures et les observations DNS, d’enregistrement, HTTP, TLS, IP et réseau disponibles.
+
+Nous vous remercions d’examiner ce domaine et de prendre les mesures appropriées si l’abus est confirmé. Merci d’accuser réception et de nous communiquer toute référence externe ou délai de traitement prévisionnel.
+
+Cordialement,
+[NOM]
+[FONCTION]
+[SOCIÉTÉ]
+

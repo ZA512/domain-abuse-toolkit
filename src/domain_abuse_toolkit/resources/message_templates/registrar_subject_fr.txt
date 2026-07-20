@@ -1,0 +1,2 @@
+Brouillon de signalement — suspicion de {{ suspicion_type }} — {{ domain }}
+

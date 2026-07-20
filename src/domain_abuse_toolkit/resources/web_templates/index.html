@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}New case — Domain Abuse Toolkit{% endblock %}
+{% block content %}
+  <section class="hero">
+    <p class="eyebrow">Local MVP foundation</p>
+    <h1>Turn a suspicious URL into an actionable case.</h1>
+    <p class="lead">Create the record, normalize the exact target, prepare the first actions and generate bilingual drafts. No network collection or external message occurs from this screen.</p>
+  </section>
+
+  <section class="capability-bar" aria-label="Enabled capabilities">
+    <span>Network collection: <strong>{{ "on" if capabilities.network_collection else "off" }}</strong></span>
+    <span>Screenshots: <strong>{{ "on" if capabilities.screenshots else "off" }}</strong></span>
+    <span>LLM: <strong>{{ "on" if capabilities.llm else "off" }}</strong></span>
+    <span>Outlook Graph: <strong>{{ "on" if capabilities.microsoft_graph else "off" }}</strong></span>
+  </section>
+
+  <div class="layout-two">
+    <section class="panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Step 1</p>
+          <h2>Create a case</h2>
+        </div>
+        <span class="badge">2 required decisions</span>
+      </div>
+
+      {% if error %}<div class="alert" role="alert">{{ error }}</div>{% endif %}
+
+      <form action="/cases" method="post" class="case-form">
+        <label>
+          Suspicious URL
+          <input name="target" type="text" required maxlength="4096" placeholder="https://suspicious.example/path" value="{{ form.target or '' }}">
+          <small>The exact path and query are preserved; fragments are excluded from collection.</small>
+        </label>
+        <label>
+          Brand profile
+          <input name="brand" type="text" required maxlength="200" placeholder="Example Brand" value="{{ form.brand or '' }}">
+        </label>
+        <label>
+          Legitimate reference URL
+          <input name="legit_url" type="text" required maxlength="4096" placeholder="https://www.example.com/" value="{{ form.legit_url or '' }}">
+        </label>
+        <div class="grid-two">
+          <label>
+            Suspicion type
+            <select name="suspicion_type">
+              <option value="brand impersonation">Brand impersonation</option>
+              <option value="phishing and credential collection">Phishing / credentials</option>
+              <option value="fraudulent payment or shop">Fraudulent payment / shop</option>
+              <option value="malware distribution">Malware distribution</option>
+            </select>
+          </label>
+          <label>
+            Urgency
+            <select name="urgency">
+              <option value="normal">Normal</option>
+              <option value="high">High</option>
+              <option value="immediate">Immediate</option>
+            </select>
+          </label>
+        </div>
+        <details>
+          <summary>Optional context</summary>
+          <label>
+            Campaign
+            <input name="campaign" type="text" maxlength="200" value="{{ form.campaign or '' }}">
+          </label>
+          <label>
+            Internal notes
+            <textarea name="notes" rows="4" maxlength="4000">{{ form.notes or '' }}</textarea>
+          </label>
+        </details>
+        <button type="submit" class="button button-primary">Create case and prepare workflow</button>
+      </form>
+    </section>
+
+    <aside class="panel panel-muted">
+      <p class="eyebrow">Safety contract</p>
+      <h2>What happens now</h2>
+      <ol class="compact-list">
+        <li>The input is normalized without contacting the target.</li>
+        <li>A private local case record and SHA-256 manifest are created.</li>
+        <li>Suggested actions and bilingual registrar drafts are prepared.</li>
+        <li>A human must validate every fact before external use.</li>
+      </ol>
+      <p class="callout">Cases are restored from integrity-checked local records after each restart. Private data remains under <code>case-data/</code>, which Git ignores.</p>
+    </aside>
+  </div>
+
+  {% if cases %}
+    <section class="panel case-list">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Persistent local follow-up</p>
+          <h2>Cases to review</h2>
+        </div>
+        <span class="badge">{{ case_counts.total }} total</span>
+      </div>
+      <div class="case-summary" aria-label="Case summary">
+        <span><strong>{{ case_counts.needs_validation }}</strong> need validation</span>
+        <span><strong>{{ case_counts.critical }}</strong> critical</span>
+      </div>
+      {% for case in cases %}
+        <a class="case-row" href="/cases/{{ case.id }}">
+          <span>
+            <strong>{{ case.brand }} · {{ case.target.registrable_domain }}</strong>
+            <small>{{ case.id }} · {{ case.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</small>
+            <small class="break-anywhere">{{ case.target.normalized_url }}</small>
+          </span>
+          <span class="case-row-badges">
+            <span class="badge badge-high">{{ case.criticality_proposed }}</span>
+            <span class="badge">{{ case.state }}</span>
+          </span>
+        </a>
+      {% endfor %}
+    </section>
+  {% endif %}
+
+  {% if load_warnings %}
+    <div class="alert" role="alert">{{ load_warnings|length }} local case(s) could not be restored because their integrity or format check failed.</div>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ case.id }} — Domain Abuse Toolkit{% endblock %}
+{% block content %}
+  <nav class="breadcrumb"><a href="/">New case</a><span>/</span><span>{{ case.id }}</span></nav>
+
+  {% if pilot_notice %}
+    <div class="alert alert-neutral">Local pilot: this case is persisted and integrity-checked. No network collector is running.</div>
+  {% endif %}
+
+  <section class="case-header">
+    <div>
+      <p class="eyebrow">{{ case.id }}</p>
+      <h1>{{ case.target.registrable_domain }}</h1>
+      <p class="lead break-anywhere">{{ case.target.normalized_url }}</p>
+    </div>
+    <div class="header-status">
+      <span class="badge badge-high">{{ case.criticality_proposed }}</span>
+      <span class="badge">{{ case.state }}</span>
+    </div>
+  </section>
+
+  <section class="stats-grid">
+    <div class="stat"><span>Brand</span><strong>{{ case.brand }}</strong></div>
+    <div class="stat"><span>Suspicion</span><strong>{{ case.suspicion_type }}</strong></div>
+    <div class="stat"><span>Exact path</span><strong class="break-anywhere">{{ case.target.path }}</strong></div>
+    <div class="stat"><span>Created UTC</span><strong>{{ case.created_at.strftime('%Y-%m-%d %H:%M') }}</strong></div>
+  </section>
+
+  <div class="layout-two layout-case">
+    <section class="panel">
+      <div class="section-heading">
+        <div><p class="eyebrow">Action cockpit</p><h2>Recommended next actions</h2></div>
+      </div>
+      <div class="action-stack">
+        {% for action in case.actions %}
+          <article class="action-card">
+            <div>
+              <h3>{{ action.title }}</h3>
+              <p>{{ action.reason }}</p>
+            </div>
+            <span class="badge">{% if action.due_offset_hours == 0 %}Now{% else %}+{{ action.due_offset_hours }}h{% endif %}</span>
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+
+    <aside class="panel">
+      <div class="section-heading">
+        <div><p class="eyebrow">Collection</p><h2>Capability status</h2></div>
+      </div>
+      <dl class="definition-list">
+        <div><dt>Network</dt><dd>{{ "Enabled" if capabilities.network_collection else "Disabled" }}</dd></div>
+        <div><dt>Browser capture</dt><dd>{{ "Enabled" if capabilities.screenshots else "Disabled" }}</dd></div>
+        <div><dt>External APIs</dt><dd>{{ "Enabled" if capabilities.external_apis else "Disabled" }}</dd></div>
+        <div><dt>LLM</dt><dd>{{ "Enabled" if capabilities.llm else "Disabled" }}</dd></div>
+      </dl>
+      <p class="callout">The next implementation increment adds explicit collector jobs. Merely opening this case never contacts the target.</p>
+    </aside>
+  </div>
+
+  <section class="panel">
+    <div class="section-heading">
+      <div><p class="eyebrow">Draft workspace</p><h2>Registrar drafts</h2></div>
+      <span class="badge badge-safe">Not sent</span>
+    </div>
+
+    <div class="tabs" role="tablist" aria-label="Draft languages">
+      {% for item in drafts %}
+        <button class="tab-button{% if loop.first %} active{% endif %}" data-tab-target="draft-{{ item.draft.language }}" type="button">{{ item.draft.language|upper }}</button>
+      {% endfor %}
+    </div>
+
+    {% for item in drafts %}
+      <article id="draft-{{ item.draft.language }}" class="draft{% if not loop.first %} hidden{% endif %}">
+        <label>Subject<input id="subject-{{ item.draft.language }}" value="{{ item.draft.subject }}" readonly></label>
+        <label>Body<textarea id="body-{{ item.draft.language }}" rows="16" readonly>{{ item.draft.body }}</textarea></label>
+        <p class="draft-meta">Template {{ item.draft.template_version }} · Missing: {{ item.draft.missing_placeholders|join(', ') }}</p>
+        <div class="button-row">
+          <button class="button" type="button" data-copy="#subject-{{ item.draft.language }}">Copy subject</button>
+          <button class="button" type="button" data-copy="#body-{{ item.draft.language }}">Copy body</button>
+          <a class="button button-primary" href="{{ item.mailto }}">Open email client</a>
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+{% endblock %}
