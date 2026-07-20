@@ -1,8 +1,14 @@
 import pytest
 from pydantic import ValidationError
 
-from domain_abuse_toolkit.models import CaseCreate, CaseState, Criticality, Urgency
-from domain_abuse_toolkit.services.cases import CaseService
+from domain_abuse_toolkit.models import (
+    CaseCreate,
+    CaseState,
+    Criticality,
+    QualificationSubmission,
+    Urgency,
+)
+from domain_abuse_toolkit.services.cases import CaseService, QualificationValidationError
 from domain_abuse_toolkit.services.drafts import DraftService
 from domain_abuse_toolkit.services.evidence import EvidenceStore
 
@@ -63,9 +69,22 @@ def test_action_events_drive_state_and_survive_restart(tmp_path) -> None:  # typ
         )
     )
 
-    service.set_action_completed(case.id, "validate-evidence", completed=True)
+    service.submit_qualification(
+        case.id,
+        QualificationSubmission(
+            brand_represented=True,
+            copied_elements=True,
+            sensitive_input_or_payment=False,
+            victims_or_transactions=False,
+            related_case_or_campaign=False,
+            publicly_available=True,
+            confirmed_criticality=case.criticality_proposed,
+            reviewer="MG",
+        ),
+    )
     assert case.state == CaseState.COLLECTING
     assert case.actions[0].completed_at is not None
+    assert case.criticality_confirmed == case.criticality_proposed
 
     service.set_action_completed(case.id, "prepare-user-protection", completed=True)
     service.set_action_completed(case.id, "prepare-registrar", completed=True)
@@ -81,3 +100,47 @@ def test_action_events_drive_state_and_survive_restart(tmp_path) -> None:  # typ
     restarted.set_action_completed(case.id, "prepare-registrar", completed=False)
     assert restored.state == CaseState.COLLECTING
     assert restarted.history(case.id)[0].completed is False
+
+
+def test_criticality_override_requires_reason_and_revisions_are_audited(
+    tmp_path,
+) -> None:  # type: ignore[no-untyped-def]
+    service = CaseService(EvidenceStore(tmp_path), DraftService())
+    case = service.create(
+        CaseCreate(
+            target="https://shop.example.net/",
+            brand="Example Brand",
+            legit_url="https://www.example.com/",
+        )
+    )
+    submission = QualificationSubmission(
+        brand_represented=True,
+        copied_elements=False,
+        sensitive_input_or_payment=False,
+        victims_or_transactions=False,
+        related_case_or_campaign=False,
+        publicly_available=True,
+        confirmed_criticality=Criticality.LOW,
+        reviewer="MG",
+    )
+
+    with pytest.raises(QualificationValidationError, match="reason"):
+        service.submit_qualification(case.id, submission)
+
+    service.submit_qualification(
+        case.id,
+        submission.model_copy(update={"override_reason": "No active harmful path observed."}),
+    )
+    service.submit_qualification(
+        case.id,
+        submission.model_copy(
+            update={
+                "confirmed_criticality": case.criticality_proposed,
+                "override_reason": "This text is discarded when there is no override.",
+            }
+        ),
+    )
+
+    assert case.qualification is not None
+    assert case.qualification.override_reason is None
+    assert len(service.history(case.id)) == 2

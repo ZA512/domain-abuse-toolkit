@@ -9,15 +9,25 @@ from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import ValidationError
 
 from domain_abuse_toolkit import __version__
 from domain_abuse_toolkit.config import get_settings
-from domain_abuse_toolkit.models import ActionUpdate, CaseCreate, Draft, Urgency
+from domain_abuse_toolkit.models import (
+    ActionEvent,
+    ActionUpdate,
+    CaseCreate,
+    Criticality,
+    Draft,
+    QualificationSubmission,
+    Urgency,
+)
 from domain_abuse_toolkit.security.targets import TargetValidationError, normalize_target
 from domain_abuse_toolkit.services.cases import (
     ActionNotFoundError,
     CaseNotFoundError,
     CaseService,
+    QualificationValidationError,
 )
 from domain_abuse_toolkit.services.drafts import DraftService
 from domain_abuse_toolkit.services.evidence import EvidenceStore
@@ -42,6 +52,7 @@ app.mount(
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
+    response = None
     if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
         origin = request.headers.get("origin")
         fetch_site = request.headers.get("sec-fetch-site")
@@ -51,8 +62,9 @@ async def security_headers(request: Request, call_next):  # type: ignore[no-unty
             f"http://localhost:{settings.port}",
         }
         if fetch_site == "cross-site" or (origin and origin.rstrip("/") not in allowed_origins):
-            return PlainTextResponse("Cross-site state change rejected.", status_code=403)
-    response = await call_next(request)
+            response = PlainTextResponse("Cross-site state change rejected.", status_code=403)
+    if response is None:
+        response = await call_next(request)
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; "
         "form-action 'self'"
@@ -76,7 +88,9 @@ def _mailto(draft: Draft) -> str:
     return f"mailto:?{query}"
 
 
-def _case_context(request: Request, case_id: str) -> dict[str, object]:
+def _case_context(
+    request: Request, case_id: str, qualification_error: str | None = None
+) -> dict[str, object]:
     try:
         record = case_service.get(case_id)
     except CaseNotFoundError as exc:
@@ -94,16 +108,26 @@ def _case_context(request: Request, case_id: str) -> dict[str, object]:
             }
         )
     action_titles = {action.code: action.title for action in record.actions}
-    history = [
-        {"event": event, "action_title": action_titles.get(event.action_code, event.action_code)}
-        for event in case_service.history(case_id)
-    ]
+    history = []
+    for event in case_service.history(case_id):
+        if isinstance(event, ActionEvent):
+            history.append(
+                {
+                    "kind": "action",
+                    "event": event,
+                    "action_title": action_titles.get(event.action_code, event.action_code),
+                }
+            )
+        else:
+            history.append({"kind": "qualification", "event": event})
     return {
         "request": request,
         "case": record,
         "drafts": drafts,
         "actions": actions,
         "history": history,
+        "criticalities": list(Criticality),
+        "qualification_error": qualification_error,
         "capabilities": case_service.capabilities(settings),
         "pilot_notice": True,
     }
@@ -182,12 +206,59 @@ def create_case_form(
 
 
 @app.get("/cases/{case_id}", response_class=HTMLResponse)
-def case_detail(request: Request, case_id: str):  # type: ignore[no-untyped-def]
+def case_detail(
+    request: Request, case_id: str, qualification_error: str | None = None
+):  # type: ignore[no-untyped-def]
     return templates.TemplateResponse(
         request=request,
         name="case.html",
-        context=_case_context(request, case_id),
+        context=_case_context(request, case_id, qualification_error),
     )
+
+
+@app.post("/cases/{case_id}/qualification")
+def submit_qualification_form(
+    case_id: str,
+    confirmed_criticality: Annotated[Criticality, Form()],
+    reviewer: Annotated[str, Form(min_length=1, max_length=80)],
+    brand_represented: Annotated[bool, Form()] = False,
+    copied_elements: Annotated[bool, Form()] = False,
+    sensitive_input_or_payment: Annotated[bool, Form()] = False,
+    victims_or_transactions: Annotated[bool, Form()] = False,
+    related_case_or_campaign: Annotated[bool, Form()] = False,
+    publicly_available: Annotated[bool, Form()] = False,
+    override_reason: Annotated[str | None, Form(max_length=1000)] = None,
+):  # type: ignore[no-untyped-def]
+    try:
+        submission = QualificationSubmission(
+            brand_represented=brand_represented,
+            copied_elements=copied_elements,
+            sensitive_input_or_payment=sensitive_input_or_payment,
+            victims_or_transactions=victims_or_transactions,
+            related_case_or_campaign=related_case_or_campaign,
+            publicly_available=publicly_available,
+            confirmed_criticality=confirmed_criticality,
+            reviewer=reviewer,
+            override_reason=override_reason,
+        )
+    except ValidationError as exc:
+        message = exc.errors(include_url=False)[0]["msg"]
+        encoded_error = quote(str(message), safe="")
+        return RedirectResponse(
+            url=f"/cases/{case_id}?qualification_error={encoded_error}#qualification",
+            status_code=303,
+        )
+    try:
+        case_service.submit_qualification(case_id, submission)
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Case not found") from exc
+    except QualificationValidationError as exc:
+        encoded_error = quote(str(exc), safe="")
+        return RedirectResponse(
+            url=f"/cases/{case_id}?qualification_error={encoded_error}#qualification",
+            status_code=303,
+        )
+    return RedirectResponse(url=f"/cases/{case_id}#qualification", status_code=303)
 
 
 @app.post("/cases/{case_id}/actions/{action_code}")
@@ -258,4 +329,17 @@ def update_action_api(
         raise HTTPException(status_code=404, detail="Case not found") from exc
     except ActionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Action not found") from exc
+    return record.model_dump(mode="json")
+
+
+@app.post("/api/v1/cases/{case_id}/qualification")
+def submit_qualification_api(
+    case_id: str, submission: QualificationSubmission
+) -> dict[str, object]:
+    try:
+        record = case_service.submit_qualification(case_id, submission)
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Case not found") from exc
+    except QualificationValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return record.model_dump(mode="json")

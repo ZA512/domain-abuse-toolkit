@@ -69,6 +69,7 @@ def test_action_api_updates_case_and_rejects_cross_site_requests(
         headers={"origin": "https://attacker.example", "sec-fetch-site": "cross-site"},
     )
     assert blocked.status_code == 403
+    assert blocked.headers["cache-control"] == "no-store"
 
     updated = client.patch(action_url, json={"completed": True})
     assert updated.status_code == 200
@@ -78,3 +79,65 @@ def test_action_api_updates_case_and_rejects_cross_site_requests(
     detail = client.get(f"/cases/{created['id']}")
     assert "Workflow history" in detail.text
     assert "Completed · Validate the observations and criticality" in detail.text
+
+
+def test_qualification_api_requires_override_reason_and_renders_revision(
+    client: TestClient,
+) -> None:
+    created = client.post(
+        "/api/v1/cases",
+        json={
+            "target": "https://shop.example.net/",
+            "brand": "Example Brand",
+            "legit_url": "https://www.example.com/",
+        },
+    ).json()
+    qualification_url = f"/api/v1/cases/{created['id']}/qualification"
+    payload = {
+        "brand_represented": True,
+        "copied_elements": True,
+        "sensitive_input_or_payment": False,
+        "victims_or_transactions": False,
+        "related_case_or_campaign": False,
+        "publicly_available": True,
+        "confirmed_criticality": "low",
+        "reviewer": "MG",
+    }
+
+    rejected = client.post(qualification_url, json=payload)
+    assert rejected.status_code == 422
+    assert "reason" in rejected.json()["detail"]
+
+    payload["override_reason"] = "No harmful transaction path observed."
+    qualified = client.post(qualification_url, json=payload)
+    assert qualified.status_code == 200
+    assert qualified.json()["criticality_confirmed"] == "low"
+    assert qualified.json()["qualification"]["reviewer"] == "MG"
+    assert qualified.json()["actions"][0]["completed_at"] is not None
+
+    detail = client.get(f"/cases/{created['id']}")
+    assert "Human validation desk" in detail.text
+    assert "Qualification confirmed · LOW" in detail.text
+
+
+def test_qualification_form_redirects_back_with_human_readable_error(
+    client: TestClient,
+) -> None:
+    created = client.post(
+        "/api/v1/cases",
+        json={
+            "target": "https://shop.example.net/",
+            "brand": "Example Brand",
+            "legit_url": "https://www.example.com/",
+        },
+    ).json()
+
+    response = client.post(
+        f"/cases/{created['id']}/qualification",
+        data={"confirmed_criticality": "low", "reviewer": "MG"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert "qualification_error=" in response.headers["location"]
+    assert response.headers["location"].endswith("#qualification")

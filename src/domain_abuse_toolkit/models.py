@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -89,7 +90,7 @@ class SuggestedAction(BaseModel):
 class ActionEvent(BaseModel):
     id: str
     case_id: str
-    event_type: str = "action_status_changed"
+    event_type: Literal["action_status_changed"] = "action_status_changed"
     action_code: str
     completed: bool
     occurred_at: datetime
@@ -97,6 +98,44 @@ class ActionEvent(BaseModel):
 
 class ActionUpdate(BaseModel):
     completed: bool
+
+
+class QualificationSubmission(BaseModel):
+    brand_represented: bool
+    copied_elements: bool
+    sensitive_input_or_payment: bool
+    victims_or_transactions: bool
+    related_case_or_campaign: bool
+    publicly_available: bool
+    confirmed_criticality: Criticality
+    reviewer: str = Field(min_length=1, max_length=80)
+    override_reason: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("reviewer")
+    @classmethod
+    def validate_reviewer(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Reviewer must not be blank.")
+        if any(ord(character) < 32 or ord(character) == 127 for character in normalized):
+            raise ValueError("Reviewer must not contain control characters.")
+        return normalized
+
+    @field_validator("override_reason")
+    @classmethod
+    def validate_override_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if any(ord(character) < 32 and character not in "\r\n\t" for character in value):
+            raise ValueError("Override reason contains a prohibited control character.")
+        return value.strip() or None
+
+
+class QualificationEvent(QualificationSubmission):
+    id: str
+    case_id: str
+    event_type: Literal["qualification_recorded"] = "qualification_recorded"
+    occurred_at: datetime
 
 
 class Draft(BaseModel):
@@ -120,6 +159,7 @@ class CaseRecord(BaseModel):
     notes: str | None = None
     criticality_proposed: Criticality
     criticality_confirmed: Criticality | None = None
+    qualification: QualificationEvent | None = None
     actions: list[SuggestedAction]
     drafts: list[Draft]
     created_at: datetime

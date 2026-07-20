@@ -14,7 +14,8 @@
       <p class="lead break-anywhere">{{ case.target.normalized_url }}</p>
     </div>
     <div class="header-status">
-      <span class="badge badge-high">{{ case.criticality_proposed }}</span>
+      <span class="badge badge-high">Proposed: {{ case.criticality_proposed }}</span>
+      {% if case.criticality_confirmed %}<span class="badge badge-safe">Confirmed: {{ case.criticality_confirmed }}</span>{% endif %}
       <span class="badge">{{ case.state }}</span>
     </div>
   </section>
@@ -24,6 +25,54 @@
     <div class="stat"><span>Suspicion</span><strong>{{ case.suspicion_type }}</strong></div>
     <div class="stat"><span>Exact path</span><strong class="break-anywhere">{{ case.target.path }}</strong></div>
     <div class="stat"><span>Created UTC</span><strong>{{ case.created_at.strftime('%Y-%m-%d %H:%M') }}</strong></div>
+  </section>
+
+  {% set q = case.qualification %}
+  <section id="qualification" class="panel qualification-panel">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Human validation desk</p>
+        <h2>Qualify the observed risk</h2>
+      </div>
+      <span class="badge {{ 'badge-safe' if q else '' }}">{{ "Reviewed" if q else "Required" }}</span>
+    </div>
+    <p class="lead qualification-intro">Record only observations that a human has verified. Saving a revision confirms the criticality and completes the validation action.</p>
+    {% if qualification_error %}<div class="alert" role="alert">{{ qualification_error }}</div>{% endif %}
+
+    <form action="/cases/{{ case.id }}/qualification" method="post" class="qualification-form">
+      <fieldset class="decision-list">
+        <legend>Review checklist</legend>
+        <label class="decision"><input type="checkbox" name="brand_represented"{% if q and q.brand_represented %} checked{% endif %}><span><strong>Selected brand is represented</strong><small>Logo, name, identity or an unambiguous reference.</small></span></label>
+        <label class="decision"><input type="checkbox" name="copied_elements"{% if q and q.copied_elements %} checked{% endif %}><span><strong>Copied products, text or visuals are visible</strong><small>Content appears to reproduce legitimate material.</small></span></label>
+        <label class="decision"><input type="checkbox" name="sensitive_input_or_payment"{% if q and q.sensitive_input_or_payment %} checked{% endif %}><span><strong>Login, personal-data or payment path is offered</strong><small>The page solicits credentials, personal information or a transaction.</small></span></label>
+        <label class="decision"><input type="checkbox" name="victims_or_transactions"{% if q and q.victims_or_transactions %} checked{% endif %}><span><strong>Victims or fraudulent transactions are known</strong><small>Confirmed reports exist beyond the suspicious page itself.</small></span></label>
+        <label class="decision"><input type="checkbox" name="related_case_or_campaign"{% if q and q.related_case_or_campaign %} checked{% endif %}><span><strong>Related case, domain or campaign is known</strong><small>A recurrence or confirmed relationship has been identified.</small></span></label>
+        <label class="decision decision-factual"><input type="checkbox" name="publicly_available"{% if q and q.publicly_available %} checked{% endif %}><span><strong>Target is publicly available at review time</strong><small>This is a time-bound observation, not an automatic network check.</small></span></label>
+      </fieldset>
+
+      <div class="grid-two">
+        <label>
+          Confirmed criticality
+          <select name="confirmed_criticality" required>
+            {% for criticality in criticalities %}
+              <option value="{{ criticality }}"{% if (q and q.confirmed_criticality == criticality) or (not q and case.criticality_proposed == criticality) %} selected{% endif %}>{{ criticality|upper }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          Reviewer / initials
+          <input name="reviewer" required maxlength="80" value="{{ q.reviewer if q else '' }}" placeholder="e.g. MG">
+        </label>
+      </div>
+      <label>
+        Override reason
+        <textarea name="override_reason" rows="3" maxlength="1000" placeholder="Required only when confirmed criticality differs from the proposal">{{ q.override_reason if q and q.override_reason else '' }}</textarea>
+      </label>
+      <div class="qualification-footer">
+        {% if q %}<small>Latest review: {{ q.occurred_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC · {{ q.reviewer }}</small>{% endif %}
+        <button class="button button-primary" type="submit">{{ "Record a new revision" if q else "Confirm qualification" }}</button>
+      </div>
+    </form>
   </section>
 
   <div class="layout-two layout-case">
@@ -78,7 +127,12 @@
           <li>
             <span class="timeline-dot" aria-hidden="true"></span>
             <div>
-              <strong>{{ "Completed" if item.event.completed else "Reopened" }} · {{ item.action_title }}</strong>
+              {% if item.kind == "action" %}
+                <strong>{{ "Completed" if item.event.completed else "Reopened" }} · {{ item.action_title }}</strong>
+              {% else %}
+                <strong>Qualification confirmed · {{ item.event.confirmed_criticality|upper }}</strong>
+                <span class="timeline-detail">Reviewed by {{ item.event.reviewer }}{% if item.event.override_reason %} · Override: {{ item.event.override_reason }}{% endif %}</span>
+              {% endif %}
               <small>{{ item.event.occurred_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC · {{ item.event.id }}</small>
             </div>
           </li>

@@ -62,11 +62,11 @@ La fenêtre doit terminer par :
 
 ```text
 All checks passed!
-28 passed
+31 passed
 SUCCES - tous les controles passent.
 ```
 
-Le nombre de tests peut augmenter au fil du développement. Après avoir créé un dossier, marquer une action comme terminée puis arrêter et relancer l’application permet également de vérifier que le dossier, son état et son historique réapparaissent dans le suivi local.
+Le nombre de tests peut augmenter au fil du développement. Après avoir créé un dossier, enregistrer la qualification, marquer une action comme terminée puis arrêter et relancer l’application permet également de vérifier que le dossier, sa criticité confirmée, son état et son historique réapparaissent dans le suivi local.
 
 ## Limite de ce premier test
 

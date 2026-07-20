@@ -41,7 +41,7 @@ Metadata for a stored file: digest, size, media type, storage reference, source,
 
 ### Qualification
 
-Human answers to the review checklist, proposed/confirmed criticality, rationale, reviewer, and timestamp. New reviews create revisions.
+Human answers to the review checklist, proposed/confirmed criticality, rationale, reviewer, and timestamp. New reviews create immutable revisions; the local pilot replays those revisions from the integrity-checked evidence manifest.
 
 ### Action
 
@@ -100,4 +100,3 @@ Party 1---* Reporting channel
 The legacy flat row can be imported by mapping stable case facts to `Case`, technical columns to an initial `Snapshot`, and each dated report/relance/escalation column to a separate `Action`.
 
 Combined strings such as `Yes - 2026-01-01` must be split into status, timestamp, actor, channel, proof, and external reference. Import should preserve the original workbook row as a source artifact for auditability.
-

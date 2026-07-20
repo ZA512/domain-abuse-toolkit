@@ -15,6 +15,8 @@ from domain_abuse_toolkit.models import (
     CaseRecord,
     CaseState,
     Criticality,
+    QualificationEvent,
+    QualificationSubmission,
     SuggestedAction,
     Urgency,
 )
@@ -31,6 +33,10 @@ class ActionNotFoundError(KeyError):
     pass
 
 
+class QualificationValidationError(ValueError):
+    pass
+
+
 class CaseService:
     """Local case service backed by integrity-checked records in the evidence store."""
 
@@ -38,7 +44,7 @@ class CaseService:
         self.evidence_store = evidence_store
         self.drafts = drafts
         self._cases: dict[str, CaseRecord] = {}
-        self._events: dict[str, list[ActionEvent]] = {}
+        self._events: dict[str, list[ActionEvent | QualificationEvent]] = {}
         self._lock = threading.Lock()
         self.load_warnings: list[str] = []
         self._load_existing_cases()
@@ -63,7 +69,7 @@ class CaseService:
             ) as exc:
                 self.load_warnings.append(f"{case_id}: {exc}")
                 continue
-            events: list[ActionEvent] = []
+            events: list[ActionEvent | QualificationEvent] = []
             try:
                 event_paths = self.evidence_store.list_original_paths(
                     case_id, "00_case/events"
@@ -78,10 +84,23 @@ class CaseService:
                         case_id, event_path
                     )
                     event_payload = json.loads(event_content.decode("utf-8"))
-                    event = ActionEvent.model_validate(event_payload["event"])
+                    raw_event = event_payload["event"]
+                    if not isinstance(raw_event, dict):
+                        raise ValueError("invalid event payload")
+                    if raw_event.get("event_type") == "action_status_changed":
+                        event: ActionEvent | QualificationEvent = ActionEvent.model_validate(
+                            raw_event
+                        )
+                    elif raw_event.get("event_type") == "qualification_recorded":
+                        event = QualificationEvent.model_validate(raw_event)
+                    else:
+                        raise ValueError("unknown event type")
                     if event.case_id != case_id:
                         raise ValueError("event case identifier mismatch")
-                    self._apply_action_event(record, event)
+                    if isinstance(event, ActionEvent):
+                        self._apply_action_event(record, event)
+                    else:
+                        self._apply_qualification_event(record, event)
                 except (
                     EvidenceStoreError,
                     UnicodeDecodeError,
@@ -191,14 +210,35 @@ class CaseService:
             raise ValueError(f"unknown action code: {event.action_code}") from exc
         action.completed_at = event.occurred_at if event.completed else None
         record.updated_at = max(record.updated_at, event.occurred_at)
+        CaseService._refresh_state(record)
 
+    @staticmethod
+    def _apply_qualification_event(
+        record: CaseRecord, event: QualificationEvent
+    ) -> None:
+        record.qualification = event
+        record.criticality_confirmed = event.confirmed_criticality
+        record.updated_at = max(record.updated_at, event.occurred_at)
+        validation_action = next(
+            (item for item in record.actions if item.code == "validate-evidence"), None
+        )
+        if validation_action is not None:
+            validation_action.completed_at = event.occurred_at
+        CaseService._refresh_state(record)
+
+    @staticmethod
+    def _refresh_state(record: CaseRecord) -> None:
         required_codes = {
             "validate-evidence",
             "prepare-user-protection",
             "prepare-registrar",
         }
         required_actions = [item for item in record.actions if item.code in required_codes]
-        if required_actions and all(item.completed_at for item in required_actions):
+        if (
+            record.criticality_confirmed is not None
+            and required_actions
+            and all(item.completed_at for item in required_actions)
+        ):
             record.state = CaseState.READY_TO_REPORT
         elif any(item.completed_at for item in record.actions):
             record.state = CaseState.COLLECTING
@@ -248,7 +288,54 @@ class CaseService:
             self._events.setdefault(case_id, []).append(event)
             return record
 
-    def history(self, case_id: str) -> list[ActionEvent]:
+    def submit_qualification(
+        self, case_id: str, submission: QualificationSubmission
+    ) -> CaseRecord:
+        with self._lock:
+            try:
+                record = self._cases[case_id]
+            except KeyError as exc:
+                raise CaseNotFoundError(case_id) from exc
+
+            if (
+                submission.confirmed_criticality != record.criticality_proposed
+                and not submission.override_reason
+            ):
+                raise QualificationValidationError(
+                    "A reason is required when overriding the proposed criticality."
+                )
+
+            normalized = submission
+            if submission.confirmed_criticality == record.criticality_proposed:
+                normalized = submission.model_copy(update={"override_reason": None})
+
+            now = datetime.now(UTC)
+            event = QualificationEvent(
+                id=f"EVT-{uuid.uuid4().hex.upper()}",
+                case_id=case_id,
+                occurred_at=now,
+                **normalized.model_dump(),
+            )
+            payload = {
+                "schema_version": "1.0",
+                "event": event.model_dump(mode="json"),
+                "notice": "Immutable local human qualification event.",
+            }
+            event_path = (
+                f"00_case/events/{now:%Y%m%dT%H%M%S.%fZ}-{event.id}.json"
+            )
+            self.evidence_store.write_original(
+                case_id,
+                event_path,
+                (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode(),
+                media_type="application/json",
+                source="operator qualification",
+            )
+            self._apply_qualification_event(record, event)
+            self._events.setdefault(case_id, []).append(event)
+            return record
+
+    def history(self, case_id: str) -> list[ActionEvent | QualificationEvent]:
         if case_id not in self._cases:
             raise CaseNotFoundError(case_id)
         return list(reversed(self._events.get(case_id, [])))
