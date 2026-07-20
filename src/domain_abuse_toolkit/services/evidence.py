@@ -83,14 +83,10 @@ class EvidenceStore:
     def read_verified_original(self, case_id: str, relative_path: str) -> bytes:
         """Read an original only when its manifest entry and SHA-256 digest are valid."""
         destination = self._artifact_path(case_id, relative_path)
-        manifest_path = self._case_dir(case_id) / "manifest.json"
-        if not destination.is_file() or not manifest_path.is_file():
+        if not destination.is_file():
             raise EvidenceStoreError("The original artifact or its manifest is missing.")
 
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise EvidenceStoreError("The evidence manifest cannot be read.") from exc
+        manifest = self._read_manifest(case_id)
 
         matching = [
             item
@@ -104,6 +100,38 @@ class EvidenceStore:
         if hashlib.sha256(content).hexdigest() != matching[0].get("sha256"):
             raise EvidenceStoreError("The original artifact failed its integrity check.")
         return content
+
+    def list_original_paths(self, case_id: str, prefix: str = "") -> list[str]:
+        """List registered original paths, optionally below a safe POSIX prefix."""
+        if prefix:
+            normalized_prefix = PurePosixPath(prefix)
+            if normalized_prefix.is_absolute() or ".." in normalized_prefix.parts:
+                raise EvidenceStoreError("Invalid artifact prefix.")
+            prefix_text = str(normalized_prefix).rstrip("/") + "/"
+        else:
+            prefix_text = ""
+
+        manifest = self._read_manifest(case_id)
+        paths: list[str] = []
+        for item in manifest.get("artifacts", []):
+            path = item.get("path")
+            if not isinstance(path, str):
+                raise EvidenceStoreError("The evidence manifest contains an invalid path.")
+            if item.get("classification") == "original" and path.startswith(prefix_text):
+                paths.append(path)
+        return sorted(paths)
+
+    def _read_manifest(self, case_id: str) -> dict[str, Any]:
+        manifest_path = self._case_dir(case_id) / "manifest.json"
+        if not manifest_path.is_file():
+            raise EvidenceStoreError("The evidence manifest is missing.")
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise EvidenceStoreError("The evidence manifest cannot be read.") from exc
+        if not isinstance(manifest, dict) or manifest.get("case_id") != case_id:
+            raise EvidenceStoreError("The evidence manifest does not match the case.")
+        return manifest
 
     def _append_manifest(self, case_id: str, record: dict[str, Any]) -> None:
         case_dir = self._case_dir(case_id)

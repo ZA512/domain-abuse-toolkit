@@ -93,6 +93,8 @@ REPO=$repoLiteral
 VENV="`$HOME/.local/share/domain-abuse-toolkit/venv"
 cd "`$REPO"
 export DAT_DATA_DIR="`$HOME/.local/share/domain-abuse-toolkit/case-data"
+export DAT_PORT=$Port
+export DAT_PUBLIC_BASE_URL="http://127.0.0.1:$Port"
 export DAT_ENABLE_NETWORK_COLLECTION=false
 export DAT_ENABLE_SCREENSHOTS=false
 mkdir -p "`$HOME/.local/share/domain-abuse-toolkit"

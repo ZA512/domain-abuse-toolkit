@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from domain_abuse_toolkit.config import Settings
 from domain_abuse_toolkit.models import (
+    ActionEvent,
     CapabilityStatus,
     CaseCreate,
     CaseRecord,
@@ -26,6 +27,10 @@ class CaseNotFoundError(KeyError):
     pass
 
 
+class ActionNotFoundError(KeyError):
+    pass
+
+
 class CaseService:
     """Local case service backed by integrity-checked records in the evidence store."""
 
@@ -33,6 +38,7 @@ class CaseService:
         self.evidence_store = evidence_store
         self.drafts = drafts
         self._cases: dict[str, CaseRecord] = {}
+        self._events: dict[str, list[ActionEvent]] = {}
         self._lock = threading.Lock()
         self.load_warnings: list[str] = []
         self._load_existing_cases()
@@ -57,7 +63,39 @@ class CaseService:
             ) as exc:
                 self.load_warnings.append(f"{case_id}: {exc}")
                 continue
+            events: list[ActionEvent] = []
+            try:
+                event_paths = self.evidence_store.list_original_paths(
+                    case_id, "00_case/events"
+                )
+            except EvidenceStoreError as exc:
+                self.load_warnings.append(f"{case_id}: {exc}")
+                event_paths = []
+
+            for event_path in event_paths:
+                try:
+                    event_content = self.evidence_store.read_verified_original(
+                        case_id, event_path
+                    )
+                    event_payload = json.loads(event_content.decode("utf-8"))
+                    event = ActionEvent.model_validate(event_payload["event"])
+                    if event.case_id != case_id:
+                        raise ValueError("event case identifier mismatch")
+                    self._apply_action_event(record, event)
+                except (
+                    EvidenceStoreError,
+                    UnicodeDecodeError,
+                    json.JSONDecodeError,
+                    KeyError,
+                    ValidationError,
+                    ValueError,
+                ) as exc:
+                    self.load_warnings.append(f"{case_id}/{event_path}: {exc}")
+                    continue
+                events.append(event)
+
             self._cases[record.id] = record
+            self._events[record.id] = events
 
     @staticmethod
     def preview(intake: CaseCreate) -> tuple[Criticality, list[SuggestedAction]]:
@@ -142,7 +180,78 @@ class CaseService:
         )
         with self._lock:
             self._cases[case_id] = record
+            self._events[case_id] = []
         return record
+
+    @staticmethod
+    def _apply_action_event(record: CaseRecord, event: ActionEvent) -> None:
+        try:
+            action = next(item for item in record.actions if item.code == event.action_code)
+        except StopIteration as exc:
+            raise ValueError(f"unknown action code: {event.action_code}") from exc
+        action.completed_at = event.occurred_at if event.completed else None
+        record.updated_at = max(record.updated_at, event.occurred_at)
+
+        required_codes = {
+            "validate-evidence",
+            "prepare-user-protection",
+            "prepare-registrar",
+        }
+        required_actions = [item for item in record.actions if item.code in required_codes]
+        if required_actions and all(item.completed_at for item in required_actions):
+            record.state = CaseState.READY_TO_REPORT
+        elif any(item.completed_at for item in record.actions):
+            record.state = CaseState.COLLECTING
+        else:
+            record.state = CaseState.NEEDS_VALIDATION
+
+    def set_action_completed(
+        self, case_id: str, action_code: str, *, completed: bool
+    ) -> CaseRecord:
+        with self._lock:
+            try:
+                record = self._cases[case_id]
+            except KeyError as exc:
+                raise CaseNotFoundError(case_id) from exc
+            try:
+                action = next(item for item in record.actions if item.code == action_code)
+            except StopIteration as exc:
+                raise ActionNotFoundError(action_code) from exc
+
+            if (action.completed_at is not None) == completed:
+                return record
+
+            now = datetime.now(UTC)
+            event = ActionEvent(
+                id=f"EVT-{uuid.uuid4().hex.upper()}",
+                case_id=case_id,
+                action_code=action_code,
+                completed=completed,
+                occurred_at=now,
+            )
+            payload = {
+                "schema_version": "1.0",
+                "event": event.model_dump(mode="json"),
+                "notice": "Immutable local workflow event.",
+            }
+            event_path = (
+                f"00_case/events/{now:%Y%m%dT%H%M%S.%fZ}-{event.id}.json"
+            )
+            self.evidence_store.write_original(
+                case_id,
+                event_path,
+                (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode(),
+                media_type="application/json",
+                source="operator workflow action",
+            )
+            self._apply_action_event(record, event)
+            self._events.setdefault(case_id, []).append(event)
+            return record
+
+    def history(self, case_id: str) -> list[ActionEvent]:
+        if case_id not in self._cases:
+            raise CaseNotFoundError(case_id)
+        return list(reversed(self._events.get(case_id, [])))
 
     def get(self, case_id: str) -> CaseRecord:
         try:

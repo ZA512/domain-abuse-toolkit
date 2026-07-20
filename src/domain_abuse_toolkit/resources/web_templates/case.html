@@ -27,18 +27,27 @@
   </section>
 
   <div class="layout-two layout-case">
-    <section class="panel">
+    <section id="actions" class="panel">
       <div class="section-heading">
         <div><p class="eyebrow">Action cockpit</p><h2>Recommended next actions</h2></div>
       </div>
       <div class="action-stack">
-        {% for action in case.actions %}
-          <article class="action-card">
+        {% for item in actions %}
+          <article class="action-card{% if item.action.completed_at %} action-completed{% elif item.overdue %} action-overdue{% endif %}">
+            <span class="action-check" aria-hidden="true">{{ "✓" if item.action.completed_at else loop.index }}</span>
             <div>
-              <h3>{{ action.title }}</h3>
-              <p>{{ action.reason }}</p>
+              <h3>{{ item.action.title }}</h3>
+              <p>{{ item.action.reason }}</p>
+              {% if item.action.completed_at %}
+                <small>Completed {{ item.action.completed_at.strftime('%Y-%m-%d %H:%M') }} UTC</small>
+              {% else %}
+                <small class="{% if item.overdue %}overdue-text{% endif %}">Due {{ item.due_at.strftime('%Y-%m-%d %H:%M') }} UTC</small>
+              {% endif %}
             </div>
-            <span class="badge">{% if action.due_offset_hours == 0 %}Now{% else %}+{{ action.due_offset_hours }}h{% endif %}</span>
+            <form action="/cases/{{ case.id }}/actions/{{ item.action.code }}" method="post">
+              <input type="hidden" name="completed" value="{{ 'false' if item.action.completed_at else 'true' }}">
+              <button class="button button-small" type="submit">{{ "Reopen" if item.action.completed_at else "Mark complete" }}</button>
+            </form>
           </article>
         {% endfor %}
       </div>
@@ -57,6 +66,28 @@
       <p class="callout">The next implementation increment adds explicit collector jobs. Merely opening this case never contacts the target.</p>
     </aside>
   </div>
+
+  <section class="panel timeline-panel">
+    <div class="section-heading">
+      <div><p class="eyebrow">Audit trail</p><h2>Workflow history</h2></div>
+      <span class="badge">{{ history|length }} events</span>
+    </div>
+    {% if history %}
+      <ol class="timeline">
+        {% for item in history %}
+          <li>
+            <span class="timeline-dot" aria-hidden="true"></span>
+            <div>
+              <strong>{{ "Completed" if item.event.completed else "Reopened" }} · {{ item.action_title }}</strong>
+              <small>{{ item.event.occurred_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC · {{ item.event.id }}</small>
+            </div>
+          </li>
+        {% endfor %}
+      </ol>
+    {% else %}
+      <p class="empty-state">No workflow event yet. Completing an action creates an immutable, integrity-checked event.</p>
+    {% endif %}
+  </section>
 
   <section class="panel">
     <div class="section-heading">

@@ -1,19 +1,24 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import quote, urlencode
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from domain_abuse_toolkit import __version__
 from domain_abuse_toolkit.config import get_settings
-from domain_abuse_toolkit.models import CaseCreate, Draft, Urgency
+from domain_abuse_toolkit.models import ActionUpdate, CaseCreate, Draft, Urgency
 from domain_abuse_toolkit.security.targets import TargetValidationError, normalize_target
-from domain_abuse_toolkit.services.cases import CaseNotFoundError, CaseService
+from domain_abuse_toolkit.services.cases import (
+    ActionNotFoundError,
+    CaseNotFoundError,
+    CaseService,
+)
 from domain_abuse_toolkit.services.drafts import DraftService
 from domain_abuse_toolkit.services.evidence import EvidenceStore
 
@@ -37,6 +42,16 @@ app.mount(
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):  # type: ignore[no-untyped-def]
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        origin = request.headers.get("origin")
+        fetch_site = request.headers.get("sec-fetch-site")
+        allowed_origins = {
+            settings.public_base_url.rstrip("/"),
+            f"http://127.0.0.1:{settings.port}",
+            f"http://localhost:{settings.port}",
+        }
+        if fetch_site == "cross-site" or (origin and origin.rstrip("/") not in allowed_origins):
+            return PlainTextResponse("Cross-site state change rejected.", status_code=403)
     response = await call_next(request)
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; "
@@ -48,6 +63,7 @@ async def security_headers(request: Request, call_next):  # type: ignore[no-unty
     response.headers["Permissions-Policy"] = (
         "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
     )
+    response.headers["Cache-Control"] = "no-store"
     return response
 
 
@@ -66,10 +82,28 @@ def _case_context(request: Request, case_id: str) -> dict[str, object]:
     except CaseNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Case not found") from exc
     drafts = [{"draft": draft, "mailto": _mailto(draft)} for draft in record.drafts]
+    now = datetime.now(UTC)
+    actions = []
+    for action in record.actions:
+        due_at = record.created_at + timedelta(hours=action.due_offset_hours)
+        actions.append(
+            {
+                "action": action,
+                "due_at": due_at,
+                "overdue": action.completed_at is None and due_at < now,
+            }
+        )
+    action_titles = {action.code: action.title for action in record.actions}
+    history = [
+        {"event": event, "action_title": action_titles.get(event.action_code, event.action_code)}
+        for event in case_service.history(case_id)
+    ]
     return {
         "request": request,
         "case": record,
         "drafts": drafts,
+        "actions": actions,
+        "history": history,
         "capabilities": case_service.capabilities(settings),
         "pilot_notice": True,
     }
@@ -156,6 +190,21 @@ def case_detail(request: Request, case_id: str):  # type: ignore[no-untyped-def]
     )
 
 
+@app.post("/cases/{case_id}/actions/{action_code}")
+def update_action_form(
+    case_id: str,
+    action_code: str,
+    completed: Annotated[bool, Form()],
+):  # type: ignore[no-untyped-def]
+    try:
+        case_service.set_action_completed(case_id, action_code, completed=completed)
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Case not found") from exc
+    except ActionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Action not found") from exc
+    return RedirectResponse(url=f"/cases/{case_id}#actions", status_code=303)
+
+
 @app.post("/api/v1/cases/preview")
 def preview_case(intake: CaseCreate) -> dict[str, object]:
     try:
@@ -194,4 +243,19 @@ def get_case_api(case_id: str) -> dict[str, object]:
         record = case_service.get(case_id)
     except CaseNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Case not found") from exc
+    return record.model_dump(mode="json")
+
+
+@app.patch("/api/v1/cases/{case_id}/actions/{action_code}")
+def update_action_api(
+    case_id: str, action_code: str, update: ActionUpdate
+) -> dict[str, object]:
+    try:
+        record = case_service.set_action_completed(
+            case_id, action_code, completed=update.completed
+        )
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Case not found") from exc
+    except ActionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Action not found") from exc
     return record.model_dump(mode="json")

@@ -83,6 +83,20 @@ class SuggestedAction(BaseModel):
     reason: str
     due_offset_hours: int = Field(ge=0)
     requires_human_validation: bool = True
+    completed_at: datetime | None = None
+
+
+class ActionEvent(BaseModel):
+    id: str
+    case_id: str
+    event_type: str = "action_status_changed"
+    action_code: str
+    completed: bool
+    occurred_at: datetime
+
+
+class ActionUpdate(BaseModel):
+    completed: bool
 
 
 class Draft(BaseModel):

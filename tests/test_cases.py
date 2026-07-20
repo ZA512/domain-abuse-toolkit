@@ -51,3 +51,33 @@ def test_cases_are_restored_from_verified_local_records(tmp_path) -> None:  # ty
     assert restarted_service.get(created.id) == created
     assert [case.id for case in restarted_service.list()] == [created.id]
     assert restarted_service.load_warnings == []
+
+
+def test_action_events_drive_state_and_survive_restart(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    service = CaseService(EvidenceStore(tmp_path), DraftService())
+    case = service.create(
+        CaseCreate(
+            target="https://login.example.net/account",
+            brand="Example Brand",
+            legit_url="https://www.example.com/",
+        )
+    )
+
+    service.set_action_completed(case.id, "validate-evidence", completed=True)
+    assert case.state == CaseState.COLLECTING
+    assert case.actions[0].completed_at is not None
+
+    service.set_action_completed(case.id, "prepare-user-protection", completed=True)
+    service.set_action_completed(case.id, "prepare-registrar", completed=True)
+    assert case.state == CaseState.READY_TO_REPORT
+    assert len(service.history(case.id)) == 3
+
+    restarted = CaseService(EvidenceStore(tmp_path), DraftService())
+    restored = restarted.get(case.id)
+    assert restored.state == CaseState.READY_TO_REPORT
+    assert len(restarted.history(case.id)) == 3
+    assert restarted.evidence_store.verify_case(case.id) == []
+
+    restarted.set_action_completed(case.id, "prepare-registrar", completed=False)
+    assert restored.state == CaseState.COLLECTING
+    assert restarted.history(case.id)[0].completed is False

@@ -70,8 +70,22 @@ summary { cursor: pointer; font-weight: 750; }
 .stat span { display: block; margin-bottom: 8px; color: var(--muted); font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.08em; }
 .stat strong { font-size: 0.92rem; }
 .action-stack { display: grid; gap: 10px; }
-.action-card { display: flex; justify-content: space-between; gap: 18px; padding: 15px; border: 1px solid var(--line); border-radius: 11px; }
+.action-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 15px; border: 1px solid var(--line); border-radius: 11px; }
 .action-card p { margin: 0; color: var(--muted); font-size: 0.88rem; }
+.action-card small { display: block; margin-top: 7px; color: var(--muted); }
+.action-check { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: #edf0ee; color: var(--muted); font-size: 0.82rem; font-weight: 800; }
+.action-completed { background: var(--accent-soft); border-color: #b9dfce; }
+.action-completed .action-check { background: var(--accent); color: #fff; }
+.action-completed h3 { text-decoration: line-through; text-decoration-thickness: 1px; }
+.action-overdue { border-color: #e2bc78; background: #fffbf2; }
+.overdue-text { color: var(--warning) !important; font-weight: 750; }
+.button-small { min-height: 34px; padding: 7px 10px; font-size: 0.78rem; }
+.timeline-panel { margin: 22px 0; }
+.timeline { display: grid; gap: 0; margin: 8px 0 0; padding: 0; list-style: none; }
+.timeline li { display: grid; grid-template-columns: auto 1fr; gap: 12px; padding: 13px 0; border-top: 1px solid var(--line); }
+.timeline-dot { width: 10px; height: 10px; margin-top: 5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.timeline small { display: block; margin-top: 4px; color: var(--muted); }
+.empty-state { margin-bottom: 0; color: var(--muted); }
 .definition-list { display: grid; gap: 2px; margin: 0 0 18px; }
 .definition-list div { display: flex; justify-content: space-between; gap: 20px; padding: 11px 0; border-bottom: 1px solid var(--line); }
 .definition-list dt { color: var(--muted); }
@@ -90,5 +104,7 @@ code { padding: 2px 5px; border-radius: 5px; background: rgba(19, 33, 27, 0.08);
   .case-header, .section-heading { flex-direction: column; }
   .case-row { align-items: flex-start; flex-direction: column; }
   .case-row-badges { justify-content: flex-start; }
+  .action-card { grid-template-columns: auto 1fr; }
+  .action-card form { grid-column: 2; }
   .shell { padding-top: 34px; }
 }

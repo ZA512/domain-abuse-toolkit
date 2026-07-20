@@ -48,3 +48,33 @@ def test_create_case_api_has_no_external_side_effect(client: TestClient) -> None
     listing = client.get("/api/v1/cases")
     assert listing.status_code == 200
     assert [item["id"] for item in listing.json()] == [case["id"]]
+
+
+def test_action_api_updates_case_and_rejects_cross_site_requests(
+    client: TestClient,
+) -> None:
+    created = client.post(
+        "/api/v1/cases",
+        json={
+            "target": "https://login.example.net/",
+            "brand": "Example Brand",
+            "legit_url": "https://www.example.com/",
+        },
+    ).json()
+    action_url = f"/api/v1/cases/{created['id']}/actions/validate-evidence"
+
+    blocked = client.patch(
+        action_url,
+        json={"completed": True},
+        headers={"origin": "https://attacker.example", "sec-fetch-site": "cross-site"},
+    )
+    assert blocked.status_code == 403
+
+    updated = client.patch(action_url, json={"completed": True})
+    assert updated.status_code == 200
+    assert updated.json()["state"] == "collecting"
+    assert updated.json()["actions"][0]["completed_at"] is not None
+
+    detail = client.get(f"/cases/{created['id']}")
+    assert "Workflow history" in detail.text
+    assert "Completed · Validate the observations and criticality" in detail.text

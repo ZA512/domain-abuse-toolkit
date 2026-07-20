@@ -58,6 +58,24 @@ def test_verified_original_can_be_read_and_tampering_is_rejected(tmp_path) -> No
         store.read_verified_original("DAT-20260101-ABCDEF12", "00_case/intake.json")
 
 
+def test_original_paths_can_be_filtered_by_safe_prefix(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    store = EvidenceStore(tmp_path)
+    for path in ("00_case/intake.json", "00_case/events/event.json"):
+        store.write_original(
+            "DAT-20260101-ABCDEF12",
+            path,
+            path.encode(),
+            media_type="application/json",
+            source="synthetic test",
+        )
+
+    assert store.list_original_paths(
+        "DAT-20260101-ABCDEF12", "00_case/events"
+    ) == ["00_case/events/event.json"]
+    with pytest.raises(EvidenceStoreError, match="prefix"):
+        store.list_original_paths("DAT-20260101-ABCDEF12", "../outside")
+
+
 @pytest.mark.parametrize("relative", ["../secret", "/absolute", "folder/../../secret"])
 def test_artifact_path_cannot_escape_case(tmp_path, relative: str) -> None:  # type: ignore[no-untyped-def]
     store = EvidenceStore(tmp_path)

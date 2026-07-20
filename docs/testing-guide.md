@@ -62,11 +62,11 @@ La fenêtre doit terminer par :
 
 ```text
 All checks passed!
-25 passed
+28 passed
 SUCCES - tous les controles passent.
 ```
 
-Le nombre de tests peut augmenter au fil du développement. Après avoir créé un dossier, arrêter puis relancer l’application permet également de vérifier qu’il réapparaît dans la liste de suivi locale.
+Le nombre de tests peut augmenter au fil du développement. Après avoir créé un dossier, marquer une action comme terminée puis arrêter et relancer l’application permet également de vérifier que le dossier, son état et son historique réapparaissent dans le suivi local.
 
 ## Limite de ce premier test
 
