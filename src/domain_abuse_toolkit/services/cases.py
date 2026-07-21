@@ -17,6 +17,7 @@ from domain_abuse_toolkit.models import (
     Criticality,
     QualificationEvent,
     QualificationSubmission,
+    SnapshotEvent,
     SubmissionCreate,
     SubmissionEvent,
     SuggestedAction,
@@ -24,7 +25,11 @@ from domain_abuse_toolkit.models import (
 )
 from domain_abuse_toolkit.security.targets import normalize_target
 from domain_abuse_toolkit.services.drafts import DraftService
-from domain_abuse_toolkit.services.evidence import EvidenceStore, EvidenceStoreError
+from domain_abuse_toolkit.services.evidence import (
+    EvidenceStore,
+    EvidenceStoreError,
+    PendingArtifact,
+)
 
 
 class CaseNotFoundError(KeyError):
@@ -51,7 +56,7 @@ class CaseService:
         self.drafts = drafts
         self._cases: dict[str, CaseRecord] = {}
         self._events: dict[
-            str, list[ActionEvent | QualificationEvent | SubmissionEvent]
+            str, list[ActionEvent | QualificationEvent | SubmissionEvent | SnapshotEvent]
         ] = {}
         self._lock = threading.Lock()
         self.load_warnings: list[str] = []
@@ -77,7 +82,9 @@ class CaseService:
             ) as exc:
                 self.load_warnings.append(f"{case_id}: {exc}")
                 continue
-            events: list[ActionEvent | QualificationEvent | SubmissionEvent] = []
+            events: list[
+                ActionEvent | QualificationEvent | SubmissionEvent | SnapshotEvent
+            ] = []
             try:
                 event_paths = self.evidence_store.list_original_paths(
                     case_id, "00_case/events"
@@ -96,13 +103,18 @@ class CaseService:
                     if not isinstance(raw_event, dict):
                         raise ValueError("invalid event payload")
                     if raw_event.get("event_type") == "action_status_changed":
-                        event: ActionEvent | QualificationEvent = ActionEvent.model_validate(
-                            raw_event
-                        )
+                        event: (
+                            ActionEvent
+                            | QualificationEvent
+                            | SubmissionEvent
+                            | SnapshotEvent
+                        ) = ActionEvent.model_validate(raw_event)
                     elif raw_event.get("event_type") == "qualification_recorded":
                         event = QualificationEvent.model_validate(raw_event)
                     elif raw_event.get("event_type") == "report_submission_recorded":
                         event = SubmissionEvent.model_validate(raw_event)
+                    elif raw_event.get("event_type") == "snapshot_recorded":
+                        event = SnapshotEvent.model_validate(raw_event)
                     else:
                         raise ValueError("unknown event type")
                     if event.case_id != case_id:
@@ -111,8 +123,10 @@ class CaseService:
                         self._apply_action_event(record, event)
                     elif isinstance(event, QualificationEvent):
                         self._apply_qualification_event(record, event)
-                    else:
+                    elif isinstance(event, SubmissionEvent):
                         self._apply_submission_event(record, event)
+                    else:
+                        self._apply_snapshot_event(record, event)
                 except (
                     EvidenceStoreError,
                     UnicodeDecodeError,
@@ -382,6 +396,56 @@ class CaseService:
             self._events.setdefault(case_id, []).append(event)
             return record
 
+    @staticmethod
+    def _apply_snapshot_event(record: CaseRecord, event: SnapshotEvent) -> None:
+        if not any(existing.id == event.id for existing in record.snapshots):
+            record.snapshots.append(event)
+        record.updated_at = max(record.updated_at, event.occurred_at)
+
+    def record_snapshot(
+        self, snapshot: SnapshotEvent, artifacts: list[PendingArtifact]
+    ) -> CaseRecord:
+        with self._lock:
+            try:
+                record = self._cases[snapshot.case_id]
+            except KeyError as exc:
+                raise CaseNotFoundError(snapshot.case_id) from exc
+            expected_paths = {
+                path for result in snapshot.results for path in result.artifacts
+            }
+            artifact_paths = {artifact.relative_path for artifact in artifacts}
+            if expected_paths != artifact_paths:
+                raise ValueError("Snapshot artifact references do not match captured artifacts.")
+
+            for artifact in artifacts:
+                self.evidence_store.write_original(
+                    snapshot.case_id,
+                    artifact.relative_path,
+                    artifact.content,
+                    media_type=artifact.media_type,
+                    source=artifact.source,
+                    metadata=artifact.metadata,
+                )
+            payload = {
+                "schema_version": "1.0",
+                "event": snapshot.model_dump(mode="json"),
+                "notice": "Immutable passive collection snapshot.",
+            }
+            event_path = (
+                f"00_case/events/{snapshot.occurred_at:%Y%m%dT%H%M%S.%fZ}-"
+                f"{snapshot.id}.json"
+            )
+            self.evidence_store.write_original(
+                snapshot.case_id,
+                event_path,
+                (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode(),
+                media_type="application/json",
+                source="passive collection snapshot",
+            )
+            self._apply_snapshot_event(record, snapshot)
+            self._events.setdefault(snapshot.case_id, []).append(snapshot)
+            return record
+
     def submit_qualification(
         self, case_id: str, submission: QualificationSubmission
     ) -> CaseRecord:
@@ -431,7 +495,7 @@ class CaseService:
 
     def history(
         self, case_id: str
-    ) -> list[ActionEvent | QualificationEvent | SubmissionEvent]:
+    ) -> list[ActionEvent | QualificationEvent | SubmissionEvent | SnapshotEvent]:
         if case_id not in self._cases:
             raise CaseNotFoundError(case_id)
         return list(reversed(self._events.get(case_id, [])))

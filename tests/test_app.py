@@ -36,6 +36,30 @@ def test_health_and_home(client: TestClient) -> None:
     assert home.headers["x-frame-options"] == "DENY"
 
 
+def test_dns_collection_is_disabled_by_default_and_requires_opt_in(
+    client: TestClient,
+) -> None:
+    created = client.post(
+        "/api/v1/cases",
+        json={
+            "target": "https://login.example.net/",
+            "brand": "Example Brand",
+            "legit_url": "https://www.example.com/",
+        },
+    ).json()
+
+    rejected = client.post(
+        f"/api/v1/cases/{created['id']}/collections/dns",
+        json={"confirmed_authorized": True},
+    )
+    assert rejected.status_code == 403
+    assert "disabled" in rejected.json()["detail"]
+
+    detail = client.get(f"/cases/{created['id']}")
+    assert "Opening this case never contacts the target" in detail.text
+    assert "Network collection is disabled by default" in detail.text
+
+
 def test_html_forms_require_a_valid_local_csrf_token(client: TestClient) -> None:
     payload = {
         "target": "https://shop.example.net/",

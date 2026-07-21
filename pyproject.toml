@@ -11,6 +11,7 @@ requires-python = ">=3.12"
 license = { text = "Proprietary - license not yet selected" }
 authors = [{ name = "Domain Abuse Toolkit contributors" }]
 dependencies = [
+  "dnspython>=2.8,<3",
   "fastapi>=0.116,<1",
   "httpx>=0.28,<1",
   "jinja2>=3.1,<4",
@@ -41,4 +42,3 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
-

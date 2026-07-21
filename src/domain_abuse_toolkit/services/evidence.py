@@ -4,11 +4,22 @@ import hashlib
 import json
 import os
 import re
+import threading
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 _CASE_ID = re.compile(r"^[A-Z0-9][A-Z0-9-]{5,63}$")
+
+
+@dataclass(frozen=True)
+class PendingArtifact:
+    relative_path: str
+    content: bytes
+    media_type: str
+    source: str
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class EvidenceStoreError(ValueError):
@@ -21,6 +32,7 @@ class EvidenceStore:
     def __init__(self, root: Path) -> None:
         self.root = root.expanduser().resolve()
         self.root.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
 
     def _case_dir(self, case_id: str) -> Path:
         if not _CASE_ID.fullmatch(case_id):
@@ -51,26 +63,29 @@ class EvidenceStore:
         source: str,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        destination = self._artifact_path(case_id, relative_path)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with destination.open("xb") as stream:
-                stream.write(content)
-        except FileExistsError as exc:
-            raise EvidenceStoreError("Original evidence is immutable and already exists.") from exc
+        with self._lock:
+            destination = self._artifact_path(case_id, relative_path)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                with destination.open("xb") as stream:
+                    stream.write(content)
+            except FileExistsError as exc:
+                raise EvidenceStoreError(
+                    "Original evidence is immutable and already exists."
+                ) from exc
 
-        record = {
-            "path": str(PurePosixPath(relative_path)),
-            "classification": "original",
-            "media_type": media_type,
-            "source": source,
-            "size": len(content),
-            "sha256": hashlib.sha256(content).hexdigest(),
-            "created_at": datetime.now(UTC).isoformat(),
-            "metadata": metadata or {},
-        }
-        self._append_manifest(case_id, record)
-        return record
+            record = {
+                "path": str(PurePosixPath(relative_path)),
+                "classification": "original",
+                "media_type": media_type,
+                "source": source,
+                "size": len(content),
+                "sha256": hashlib.sha256(content).hexdigest(),
+                "created_at": datetime.now(UTC).isoformat(),
+                "metadata": metadata or {},
+            }
+            self._append_manifest(case_id, record)
+            return record
 
     def list_case_ids(self) -> list[str]:
         """Return valid case directories without creating or modifying any files."""

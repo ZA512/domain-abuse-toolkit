@@ -116,6 +116,20 @@ summary { cursor: pointer; font-weight: 750; }
 .channel-card-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: auto; padding-top: 4px; }
 .channel-card-footer small { color: var(--muted); }
 .email-recipient { margin: 4px 0 20px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--accent-soft); }
+.collection-form { display: grid; gap: 12px; margin-top: 14px; }
+.collection-disabled { color: var(--muted); font-size: 0.88rem; }
+.job-status { display: grid; gap: 3px; margin-bottom: 0; }
+.job-status small { color: var(--muted); overflow-wrap: anywhere; }
+.snapshot-panel { margin: 22px 0; }
+.snapshot-stack { display: grid; gap: 14px; margin-top: 18px; }
+.snapshot-card { padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfb; }
+.snapshot-heading { display: flex; justify-content: space-between; gap: 16px; }
+.snapshot-heading div { display: grid; gap: 4px; }
+.snapshot-heading small { color: var(--muted); }
+.dns-records { display: grid; gap: 6px; margin-top: 12px; }
+.dns-records div { display: grid; grid-template-columns: 62px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 8px 10px; border-radius: 8px; background: #edf0ee; }
+.dns-records span { font-weight: 800; color: var(--accent-dark); }
+.dns-records small { color: var(--muted); }
 .submission-recorder { margin-top: 24px; padding-top: 22px; border-top: 1px solid var(--line); }
 .submission-recorder > p { color: var(--muted); }
 .submission-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
@@ -144,6 +158,8 @@ code { padding: 2px 5px; border-radius: 5px; background: rgba(19, 33, 27, 0.08);
   .decision-list { grid-template-columns: 1fr; }
   .report-summary-grid, .channel-grid { grid-template-columns: 1fr; }
   .submission-form, .submission-list article { grid-template-columns: 1fr; }
+  .dns-records div { grid-template-columns: 54px minmax(0, 1fr); }
+  .dns-records small { grid-column: 2; }
   .submission-notes { grid-column: auto; }
   .channel-card-footer { align-items: stretch; flex-direction: column; }
   .decision-factual { grid-column: auto; }

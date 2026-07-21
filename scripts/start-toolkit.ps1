@@ -5,6 +5,8 @@ param(
 
     [switch]$NoBrowser,
 
+    [switch]$EnableNetworkCollection,
+
     [ValidateSet('Normal', 'Hidden')]
     [string]$ServerWindowStyle = 'Normal'
 )
@@ -69,6 +71,7 @@ if ($LASTEXITCODE -ne 0 -or -not $wslRepositoryRoot) {
 }
 
 $repoLiteral = ConvertTo-BashLiteral -Value $wslRepositoryRoot
+$networkCollectionValue = if ($EnableNetworkCollection) { 'true' } else { 'false' }
 $setupCommand = @"
 set -eu
 REPO=$repoLiteral
@@ -95,7 +98,7 @@ cd "`$REPO"
 export DAT_DATA_DIR="`$HOME/.local/share/domain-abuse-toolkit/case-data"
 export DAT_PORT=$Port
 export DAT_PUBLIC_BASE_URL="http://127.0.0.1:$Port"
-export DAT_ENABLE_NETWORK_COLLECTION=false
+export DAT_ENABLE_NETWORK_COLLECTION=$networkCollectionValue
 export DAT_ENABLE_SCREENSHOTS=false
 mkdir -p "`$HOME/.local/share/domain-abuse-toolkit"
 echo "`$`$" > "`$HOME/.local/share/domain-abuse-toolkit/server-$Port.pid"
@@ -139,7 +142,12 @@ if (-not $health) {
 }
 
 Write-Host "Pret : $applicationUrl" -ForegroundColor Green
-Write-Host 'Le mode test ne contacte aucun site cible.' -ForegroundColor Cyan
+if ($EnableNetworkCollection) {
+    Write-Host 'Collecte DNS passive activee : aucun contact ne se produit sans clic et confirmation.' -ForegroundColor Yellow
+}
+else {
+    Write-Host 'Le mode test ne contacte aucun site cible.' -ForegroundColor Cyan
+}
 Write-Host 'Fermez la fenetre serveur ou utilisez Ctrl+C pour arreter.'
 
 if (-not $NoBrowser) {

@@ -34,9 +34,10 @@ This foundation currently includes:
 - deterministic evidence ZIP export with an included offline SHA-256 verifier;
 - versioned official reporting-channel catalogue and bilingual form-ready summaries;
 - operator-confirmed submission records with external references and criticality-based follow-up dates;
+- an explicit, bounded passive DNS collection job with immutable raw responses and normalized observations;
 - unit tests for the first safety-critical behaviors.
 
-Network collection, browser capture, shared database persistence, scheduling, Microsoft Graph, and optional LLM integration are represented in the design but remain feature-gated until implemented and reviewed.
+Passive DNS collection is implemented but remains disabled by default. HTTP/TLS/RDAP collection, browser capture, shared database persistence, scheduling, Microsoft Graph, and optional LLM integration remain feature-gated until implemented and reviewed.
 
 ## Quick start
 
@@ -47,6 +48,8 @@ On the current Windows/WSL development setup:
 1. Double-click `START_TOOLKIT.cmd` to start the local application and open it in the default browser.
 2. Double-click `RUN_TESTS.cmd` to install development dependencies and run lint plus unit tests.
 3. Stop the application with `STOP_TOOLKIT.cmd`, `Ctrl+C` in the visible server window, or by closing that window.
+
+To test the passive DNS collector, stop the standard server first, then double-click `START_TOOLKIT_NETWORK.cmd` and enter `OUI`. Opening a case still performs no collection; a separate authorization checkbox and button are required on the case page.
 
 The launchers keep the Python environments and private pilot cases under the WSL user profile, outside this public Git repository. See the [local testing guide](docs/testing-guide.md).
 
@@ -83,6 +86,7 @@ pytest
 
 - The service binds to localhost by default.
 - Network collection, screenshots, external APIs, LLMs, and Microsoft Graph are off by default.
+- The opt-in network mode currently permits bounded DNS queries only; it never opens the target website.
 - Private, loopback, link-local, multicast, reserved, and unspecified IP targets are rejected.
 - Redirect targets must be revalidated before a collector follows them.
 - Evidence and private directories are ignored by Git.

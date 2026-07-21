@@ -18,10 +18,12 @@ from domain_abuse_toolkit.models import (
     ActionEvent,
     ActionUpdate,
     CaseCreate,
+    CollectionStart,
     Criticality,
     Draft,
     QualificationEvent,
     QualificationSubmission,
+    SnapshotEvent,
     SubmissionCreate,
     Urgency,
 )
@@ -33,6 +35,12 @@ from domain_abuse_toolkit.services.cases import (
     QualificationValidationError,
     SubmissionValidationError,
 )
+from domain_abuse_toolkit.services.collection_jobs import (
+    CollectionAlreadyRunningError,
+    CollectionJobService,
+    CollectionQueueFullError,
+)
+from domain_abuse_toolkit.services.collectors import DnsCollector
 from domain_abuse_toolkit.services.drafts import DraftService
 from domain_abuse_toolkit.services.evidence import EvidenceStore, EvidenceStoreError
 from domain_abuse_toolkit.services.exports import EvidenceExportService
@@ -51,6 +59,15 @@ export_service = EvidenceExportService(
     max_uncompressed_bytes=settings.max_export_bytes,
 )
 reporting_service = ReportingService()
+collection_jobs = CollectionJobService(
+    case_service,
+    DnsCollector(
+        timeout_seconds=settings.dns_timeout_seconds,
+        lifetime_seconds=settings.dns_lifetime_seconds,
+        max_records_per_type=settings.max_dns_records_per_type,
+    ),
+    max_pending_jobs=settings.max_pending_collection_jobs,
+)
 form_csrf_token = secrets.token_urlsafe(32)
 
 app = FastAPI(
@@ -121,6 +138,7 @@ def _case_context(
     case_id: str,
     qualification_error: str | None = None,
     submission_error: str | None = None,
+    collection_error: str | None = None,
 ) -> dict[str, object]:
     try:
         record = case_service.get(case_id)
@@ -151,6 +169,8 @@ def _case_context(
             )
         elif isinstance(event, QualificationEvent):
             history.append({"kind": "qualification", "event": event})
+        elif isinstance(event, SnapshotEvent):
+            history.append({"kind": "snapshot", "event": event})
         else:
             history.append({"kind": "submission", "event": event})
     integrity_errors = case_service.evidence_store.verify_case(case_id)
@@ -169,6 +189,7 @@ def _case_context(
         "criticalities": list(Criticality),
         "qualification_error": qualification_error,
         "submission_error": submission_error,
+        "collection_error": collection_error,
         "form_csrf_token": form_csrf_token,
         "integrity_errors": integrity_errors,
         "artifact_count": artifact_count,
@@ -176,6 +197,8 @@ def _case_context(
         "reporting_summaries": reporting_service.summaries(record),
         "submission_options": reporting_service.submission_options(),
         "latest_submission": record.submissions[-1] if record.submissions else None,
+        "latest_collection_job": collection_jobs.latest_for_case(case_id),
+        "snapshots": list(reversed(record.snapshots)),
         "capabilities": case_service.capabilities(settings),
         "pilot_notice": True,
     }
@@ -263,11 +286,18 @@ def case_detail(
     case_id: str,
     qualification_error: str | None = None,
     submission_error: str | None = None,
+    collection_error: str | None = None,
 ):  # type: ignore[no-untyped-def]
     return templates.TemplateResponse(
         request=request,
         name="case.html",
-        context=_case_context(request, case_id, qualification_error, submission_error),
+        context=_case_context(
+            request,
+            case_id,
+            qualification_error,
+            submission_error,
+            collection_error,
+        ),
     )
 
 
@@ -380,6 +410,34 @@ def record_submission_form(
     return RedirectResponse(url=f"/cases/{case_id}#record-submission", status_code=303)
 
 
+@app.post("/cases/{case_id}/collections/dns")
+def start_dns_collection_form(
+    case_id: str,
+    confirmed_authorized: Annotated[bool, Form()] = False,
+    csrf_token: Annotated[str, Form(alias="_csrf_token")] = "",
+):  # type: ignore[no-untyped-def]
+    _verify_form_csrf(csrf_token)
+    try:
+        _start_dns_collection(case_id, confirmed_authorized=confirmed_authorized)
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Case not found") from exc
+    except ValueError as exc:
+        encoded_error = quote(str(exc), safe="")
+        return RedirectResponse(
+            url=f"/cases/{case_id}?collection_error={encoded_error}#collection",
+            status_code=303,
+        )
+    return RedirectResponse(url=f"/cases/{case_id}#collection", status_code=303)
+
+
+def _start_dns_collection(case_id: str, *, confirmed_authorized: bool):  # type: ignore[no-untyped-def]
+    if not settings.enable_network_collection:
+        raise ValueError("Network collection is disabled in this server process.")
+    if not confirmed_authorized:
+        raise ValueError("Confirm authorization before starting passive collection.")
+    return collection_jobs.start_dns(case_id)
+
+
 @app.post("/cases/{case_id}/actions/{action_code}")
 def update_action_form(
     case_id: str,
@@ -483,3 +541,20 @@ def record_submission_api(
     except (ReportingCatalogueError, SubmissionValidationError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return record.model_dump(mode="json")
+
+
+@app.post("/api/v1/cases/{case_id}/collections/dns", status_code=202)
+def start_dns_collection_api(
+    case_id: str, request: CollectionStart
+) -> dict[str, object]:
+    try:
+        job = _start_dns_collection(
+            case_id, confirmed_authorized=request.confirmed_authorized
+        )
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Case not found") from exc
+    except (CollectionAlreadyRunningError, CollectionQueueFullError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return job.model_dump(mode="json")

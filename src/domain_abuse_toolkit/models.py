@@ -35,6 +35,15 @@ class Urgency(StrEnum):
     IMMEDIATE = "immediate"
 
 
+class CollectorStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETE = "complete"
+    PARTIAL = "partial"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
 class NormalizedTarget(BaseModel):
     exact_input: str
     normalized_url: str
@@ -98,6 +107,10 @@ class ActionEvent(BaseModel):
 
 class ActionUpdate(BaseModel):
     completed: bool
+
+
+class CollectionStart(BaseModel):
+    confirmed_authorized: bool = False
 
 
 class QualificationSubmission(BaseModel):
@@ -181,6 +194,43 @@ class SubmissionEvent(BaseModel):
     follow_up_due_at: datetime
 
 
+class CollectorError(BaseModel):
+    code: str
+    message: str
+    retryable: bool = False
+
+
+class CollectorObservation(BaseModel):
+    category: str
+    name: str
+    value: str
+    record_type: str | None = None
+    ttl: int | None = Field(default=None, ge=0)
+
+
+class CollectorResult(BaseModel):
+    collector: str
+    version: str
+    status: CollectorStatus
+    started_at: datetime
+    finished_at: datetime
+    observations: list[CollectorObservation] = Field(default_factory=list)
+    artifacts: list[str] = Field(default_factory=list)
+    errors: list[CollectorError] = Field(default_factory=list)
+
+
+class SnapshotEvent(BaseModel):
+    id: str
+    case_id: str
+    event_type: Literal["snapshot_recorded"] = "snapshot_recorded"
+    trigger: Literal["manual"] = "manual"
+    status: CollectorStatus
+    started_at: datetime
+    finished_at: datetime
+    results: list[CollectorResult]
+    occurred_at: datetime
+
+
 class Draft(BaseModel):
     language: str
     destination_role: str
@@ -204,6 +254,7 @@ class CaseRecord(BaseModel):
     criticality_confirmed: Criticality | None = None
     qualification: QualificationEvent | None = None
     submissions: list[SubmissionEvent] = Field(default_factory=list)
+    snapshots: list[SnapshotEvent] = Field(default_factory=list)
     actions: list[SuggestedAction]
     drafts: list[Draft]
     created_at: datetime

@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -36,6 +37,26 @@ def test_original_cannot_be_overwritten(tmp_path) -> None:  # type: ignore[no-un
     store.write_original(**arguments)
     with pytest.raises(EvidenceStoreError):
         store.write_original(**arguments)
+
+
+def test_concurrent_artifact_writes_keep_manifest_consistent(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    store = EvidenceStore(tmp_path)
+    case_id = "DAT-20260101-ABCDEF12"
+
+    def write(index: int) -> None:
+        store.write_original(
+            case_id,
+            f"10_snapshots/SNP-TEST/dns/{index}.dns",
+            f"wire-{index}".encode(),
+            media_type="application/dns-message",
+            source="synthetic concurrent test",
+        )
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        list(executor.map(write, range(20)))
+
+    assert store.verify_case(case_id) == []
+    assert len(store.list_original_paths(case_id)) == 20
 
 
 def test_verified_original_can_be_read_and_tampering_is_rejected(tmp_path) -> None:  # type: ignore[no-untyped-def]

@@ -59,6 +59,8 @@ Collectors implement a common result contract:
 
 Each redirect or secondary target passes through the same network policy as the initial target.
 
+The local pilot now executes bounded DNS jobs in a small in-process worker pool after an explicit operator action. Raw DNS messages and the final snapshot event are immutable evidence. This executor is intentionally a pilot mechanism; a shared deployment must move jobs to the isolated queue/worker boundary shown above.
+
 ### Browser worker
 
 Rendered capture is separated because executing hostile JavaScript has a different risk profile from DNS or RDAP queries. The worker uses an ephemeral browser context, network egress restrictions, strict limits, and no access to the application network or evidence credentials beyond a one-job upload capability.
@@ -133,4 +135,3 @@ Initial resource families:
 - `/api/v1/admin/templates`
 
 Commands that have an external side effect must be visibly separate from preparation commands. The MVP does not expose an external-send command.
-

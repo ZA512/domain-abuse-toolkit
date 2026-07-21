@@ -4,7 +4,7 @@
   <nav class="breadcrumb"><a href="/">New case</a><span>/</span><span>{{ case.id }}</span></nav>
 
   {% if pilot_notice %}
-    <div class="alert alert-neutral">Local pilot: this case is persisted and integrity-checked. No network collector is running.</div>
+    <div class="alert alert-neutral">Local pilot: this case is persisted and integrity-checked. A network collector runs only after explicit authorization from the collection panel.</div>
   {% endif %}
 
   <section class="case-header">
@@ -120,7 +120,7 @@
       </div>
     </section>
 
-    <aside class="panel">
+    <aside id="collection" class="panel collection-panel">
       <div class="section-heading">
         <div><p class="eyebrow">Collection</p><h2>Capability status</h2></div>
       </div>
@@ -130,9 +130,55 @@
         <div><dt>External APIs</dt><dd>{{ "Enabled" if capabilities.external_apis else "Disabled" }}</dd></div>
         <div><dt>LLM</dt><dd>{{ "Enabled" if capabilities.llm else "Disabled" }}</dd></div>
       </dl>
-      <p class="callout">The next implementation increment adds explicit collector jobs. Merely opening this case never contacts the target.</p>
+      <p class="callout">Opening this case never contacts the target. The first collector queries DNS only; it does not open the suspicious website.</p>
+      {% if collection_error %}<div class="alert" role="alert">{{ collection_error }}</div>{% endif %}
+      {% if capabilities.network_collection %}
+        <form action="/cases/{{ case.id }}/collections/dns" method="post" class="collection-form">
+          <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
+          <label class="confirmation-check">
+            <input type="checkbox" name="confirmed_authorized" value="true" required>
+            <span>I am authorized to perform passive DNS collection for this target.</span>
+          </label>
+          <button class="button button-primary" type="submit"{% if latest_collection_job and latest_collection_job.status in ['queued', 'running'] %} disabled{% endif %}>Start passive DNS collection</button>
+        </form>
+      {% else %}
+        <p class="collection-disabled">Network collection is disabled by default. Restart with the dedicated opt-in launcher when you are ready to test it.</p>
+      {% endif %}
+      {% if latest_collection_job %}
+        <p class="job-status"><strong>Latest job: {{ latest_collection_job.status }}</strong><small>{{ latest_collection_job.id }}</small></p>
+      {% endif %}
     </aside>
   </div>
+
+  {% if snapshots %}
+    <section class="panel snapshot-panel">
+      <div class="section-heading">
+        <div><p class="eyebrow">Passive evidence</p><h2>DNS snapshots</h2></div>
+        <span class="badge">{{ snapshots|length }} snapshot{{ 's' if snapshots|length != 1 else '' }}</span>
+      </div>
+      <div class="snapshot-stack">
+        {% for snapshot in snapshots %}
+          <article class="snapshot-card">
+            <div class="snapshot-heading">
+              <div><strong>{{ snapshot.id }}</strong><small>{{ snapshot.finished_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</small></div>
+              <span class="badge {{ 'badge-safe' if snapshot.status == 'complete' else 'badge-high' }}">{{ snapshot.status }}</span>
+            </div>
+            {% for result in snapshot.results %}
+              <p>{{ result.collector|upper }} collector {{ result.version }} · {{ result.observations|length }} observations · {{ result.artifacts|length }} raw responses</p>
+              {% if result.observations %}
+                <div class="dns-records">
+                  {% for observation in result.observations %}
+                    <div><span>{{ observation.record_type or observation.category }}</span><code class="break-anywhere">{{ observation.value }}</code>{% if observation.ttl is not none %}<small>TTL {{ observation.ttl }}</small>{% endif %}</div>
+                  {% endfor %}
+                </div>
+              {% endif %}
+              {% for error in result.errors %}<div class="alert" role="alert"><strong>{{ error.code }}</strong> · {{ error.message }}</div>{% endfor %}
+            {% endfor %}
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
 
   <section class="panel timeline-panel">
     <div class="section-heading">
@@ -150,9 +196,12 @@
               {% elif item.kind == "qualification" %}
                 <strong>Qualification confirmed · {{ item.event.confirmed_criticality|upper }}</strong>
                 <span class="timeline-detail">Reviewed by {{ item.event.reviewer }}{% if item.event.override_reason %} · Override: {{ item.event.override_reason }}{% endif %}</span>
-              {% else %}
+              {% elif item.kind == "submission" %}
                 <strong>External submission recorded · {{ item.event.channel_name }}</strong>
                 <span class="timeline-detail">{% if item.event.external_reference %}Reference {{ item.event.external_reference }} · {% endif %}Follow-up due {{ item.event.follow_up_due_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
+              {% else %}
+                <strong>Passive snapshot recorded · {{ item.event.status|upper }}</strong>
+                <span class="timeline-detail">{{ item.event.results|length }} collector result{{ 's' if item.event.results|length != 1 else '' }} · {{ item.event.id }}</span>
               {% endif %}
               <small>{{ item.event.occurred_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC · {{ item.event.id }}</small>
             </div>
