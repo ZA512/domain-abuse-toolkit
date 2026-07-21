@@ -7,7 +7,7 @@ from typing import Annotated
 from urllib.parse import quote, urlencode
 
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
@@ -31,13 +31,18 @@ from domain_abuse_toolkit.services.cases import (
     QualificationValidationError,
 )
 from domain_abuse_toolkit.services.drafts import DraftService
-from domain_abuse_toolkit.services.evidence import EvidenceStore
+from domain_abuse_toolkit.services.evidence import EvidenceStore, EvidenceStoreError
+from domain_abuse_toolkit.services.exports import EvidenceExportService
 
 settings = get_settings()
 package_root = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=package_root / "resources" / "web_templates")
 
 case_service = CaseService(EvidenceStore(settings.data_dir), DraftService())
+export_service = EvidenceExportService(
+    case_service.evidence_store,
+    max_uncompressed_bytes=settings.max_export_bytes,
+)
 form_csrf_token = secrets.token_urlsafe(32)
 
 app = FastAPI(
@@ -135,6 +140,13 @@ def _case_context(
             )
         else:
             history.append({"kind": "qualification", "event": event})
+    integrity_errors = case_service.evidence_store.verify_case(case_id)
+    try:
+        artifact_count = len(case_service.evidence_store.list_original_paths(case_id))
+    except EvidenceStoreError as exc:
+        artifact_count = 0
+        if str(exc) not in integrity_errors:
+            integrity_errors.append(str(exc))
     return {
         "request": request,
         "case": record,
@@ -144,6 +156,8 @@ def _case_context(
         "criticalities": list(Criticality),
         "qualification_error": qualification_error,
         "form_csrf_token": form_csrf_token,
+        "integrity_errors": integrity_errors,
+        "artifact_count": artifact_count,
         "capabilities": case_service.capabilities(settings),
         "pilot_notice": True,
     }
@@ -233,6 +247,27 @@ def case_detail(
         request=request,
         name="case.html",
         context=_case_context(request, case_id, qualification_error),
+    )
+
+
+@app.get("/cases/{case_id}/evidence.zip")
+def download_evidence(case_id: str) -> Response:
+    try:
+        case_service.get(case_id)
+        archive = export_service.build(case_id)
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Case not found") from exc
+    except EvidenceStoreError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return Response(
+        content=archive.content,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{case_id}-evidence.zip"',
+            "X-Evidence-Archive-SHA256": archive.sha256,
+            "X-Evidence-Manifest-SHA256": archive.manifest_sha256,
+            "X-Evidence-Artifact-Count": str(archive.artifact_count),
+        },
     )
 
 

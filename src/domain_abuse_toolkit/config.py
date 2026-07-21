@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = Field(default=8080, ge=1, le=65535)
     data_dir: Path = Path("./case-data")
+    max_export_bytes: int = Field(default=100 * 1024 * 1024, ge=1024 * 1024)
     public_base_url: str = "http://127.0.0.1:8080"
 
     enable_network_collection: bool = False
@@ -38,4 +39,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-

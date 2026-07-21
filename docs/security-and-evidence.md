@@ -59,7 +59,7 @@ Human-readable conversion, OCR, redaction, annotation, PDF rendering, comparison
 
 ### Manifest
 
-Every export includes a deterministic JSON manifest with artifact IDs, relative paths, byte sizes, SHA-256 digests, timestamps, media types, origins, and derivations. Export verification recalculates every digest.
+Every export includes the exact JSON manifest with artifact IDs, relative paths, byte sizes, SHA-256 digests, timestamps, media types, origins, and derivations. The local pilot produces a deterministic ZIP from registered artifacts only and includes a standalone verifier that recalculates every digest, enforces size limits, rejects unsafe paths, duplicate members, symbolic links, and unregistered files.
 
 ### Timestamping
 
@@ -85,4 +85,3 @@ The application records provider, model, prompt/template version, input artifact
 - Tests use reserved example domains and documentation IP ranges.
 - CI should include secret scanning and a denylist check for organization-specific terms before public publication.
 - A private deployment repository may consume this public package, but private configuration must never flow back into the public source tree.
-

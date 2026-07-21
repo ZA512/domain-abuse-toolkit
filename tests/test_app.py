@@ -1,5 +1,7 @@
 import importlib
+import io
 import re
+from zipfile import ZipFile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -167,3 +169,26 @@ def test_qualification_form_redirects_back_with_human_readable_error(
     assert response.status_code == 303
     assert "qualification_error=" in response.headers["location"]
     assert response.headers["location"].endswith("#qualification")
+
+
+def test_evidence_archive_download_has_manifest_and_integrity_headers(
+    client: TestClient,
+) -> None:
+    created = client.post(
+        "/api/v1/cases",
+        json={
+            "target": "https://shop.example.net/",
+            "brand": "Example Brand",
+            "legit_url": "https://www.example.com/",
+        },
+    ).json()
+
+    response = client.get(f"/cases/{created['id']}/evidence.zip")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert response.headers["x-evidence-artifact-count"] == "1"
+    assert len(response.headers["x-evidence-archive-sha256"]) == 64
+    with ZipFile(io.BytesIO(response.content)) as archive:
+        assert f"{created['id']}/manifest.json" in archive.namelist()
+        assert f"{created['id']}/00_case/intake.json" in archive.namelist()

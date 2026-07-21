@@ -53,6 +53,15 @@ Vérifier ensuite :
 - que les brouillons anglais et français sont présents ;
 - que les boutons de copie fonctionnent ;
 - que **Open email client** ouvre un brouillon sans l’envoyer.
+- que **Download evidence ZIP** télécharge une archive contenant le manifeste et le vérificateur.
+
+Après extraction complète du ZIP, ouvrir PowerShell dans le dossier du dossier exporté puis lancer :
+
+```powershell
+wsl.exe python3 verify_evidence.py .
+```
+
+Le résultat attendu commence par `VERIFIED:`. Toute modification, suppression ou injection de fichier doit faire échouer la vérification.
 
 ## Lancer les contrôles automatiques
 
@@ -62,7 +71,7 @@ La fenêtre doit terminer par :
 
 ```text
 All checks passed!
-32 passed
+37 passed
 SUCCES - tous les controles passent.
 ```
 

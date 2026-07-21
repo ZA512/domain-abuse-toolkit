@@ -76,6 +76,24 @@ def test_original_paths_can_be_filtered_by_safe_prefix(tmp_path) -> None:  # typ
         store.list_original_paths("DAT-20260101-ABCDEF12", "../outside")
 
 
+def test_case_verification_reports_a_broken_manifest_without_crashing(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    store = EvidenceStore(tmp_path)
+    store.write_original(
+        "DAT-20260101-ABCDEF12",
+        "00_case/intake.json",
+        b"{}",
+        media_type="application/json",
+        source="synthetic test",
+    )
+    (tmp_path / "DAT-20260101-ABCDEF12" / "manifest.json").write_text(
+        "not json", encoding="utf-8"
+    )
+
+    errors = store.verify_case("DAT-20260101-ABCDEF12")
+
+    assert errors == ["The evidence manifest cannot be read."]
+
+
 @pytest.mark.parametrize("relative", ["../secret", "/absolute", "folder/../../secret"])
 def test_artifact_path_cannot_escape_case(tmp_path, relative: str) -> None:  # type: ignore[no-untyped-def]
     store = EvidenceStore(tmp_path)

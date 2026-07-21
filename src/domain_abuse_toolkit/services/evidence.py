@@ -121,6 +121,16 @@ class EvidenceStore:
                 paths.append(path)
         return sorted(paths)
 
+    def read_manifest_bytes(self, case_id: str) -> bytes:
+        """Return the exact manifest bytes after validating its case identifier."""
+        manifest_path = self._case_dir(case_id) / "manifest.json"
+        try:
+            content = manifest_path.read_bytes()
+        except OSError as exc:
+            raise EvidenceStoreError("The evidence manifest cannot be read.") from exc
+        self._read_manifest(case_id)
+        return content
+
     def _read_manifest(self, case_id: str) -> dict[str, Any]:
         manifest_path = self._case_dir(case_id) / "manifest.json"
         if not manifest_path.is_file():
@@ -153,18 +163,36 @@ class EvidenceStore:
         os.replace(temporary, manifest_path)
 
     def verify_case(self, case_id: str) -> list[str]:
-        case_dir = self._case_dir(case_id)
-        manifest_path = case_dir / "manifest.json"
-        if not manifest_path.exists():
-            return ["manifest.json is missing"]
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        try:
+            manifest = self._read_manifest(case_id)
+        except EvidenceStoreError as exc:
+            return [str(exc)]
         errors: list[str] = []
-        for record in manifest.get("artifacts", []):
-            path = self._artifact_path(case_id, record["path"])
-            if not path.exists():
-                errors.append(f"{record['path']}: missing")
+        records = manifest.get("artifacts")
+        if not isinstance(records, list):
+            return ["manifest artifact list is invalid"]
+        seen: set[str] = set()
+        for record in records:
+            if not isinstance(record, dict) or not isinstance(record.get("path"), str):
+                errors.append("manifest contains an invalid artifact record")
                 continue
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
-            if digest != record["sha256"]:
-                errors.append(f"{record['path']}: digest mismatch")
+            relative_path = record["path"]
+            if relative_path in seen:
+                errors.append(f"{relative_path}: duplicate manifest path")
+                continue
+            seen.add(relative_path)
+            try:
+                path = self._artifact_path(case_id, relative_path)
+            except EvidenceStoreError as exc:
+                errors.append(f"{relative_path}: {exc}")
+                continue
+            if not path.exists():
+                errors.append(f"{relative_path}: missing")
+                continue
+            content = path.read_bytes()
+            if record.get("size") != len(content):
+                errors.append(f"{relative_path}: size mismatch")
+            digest = hashlib.sha256(content).hexdigest()
+            if digest != record.get("sha256"):
+                errors.append(f"{relative_path}: digest mismatch")
         return errors

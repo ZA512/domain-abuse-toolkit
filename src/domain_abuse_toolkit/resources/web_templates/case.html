@@ -27,6 +27,22 @@
     <div class="stat"><span>Created UTC</span><strong>{{ case.created_at.strftime('%Y-%m-%d %H:%M') }}</strong></div>
   </section>
 
+  <section class="panel evidence-export">
+    <div>
+      <p class="eyebrow">Evidence package</p>
+      <h2>Download a verifiable case archive</h2>
+      <p>The ZIP contains {{ artifact_count }} registered artifact{{ "s" if artifact_count != 1 else "" }}, the exact manifest and an offline verification script. Unregistered local files are excluded.</p>
+      {% if integrity_errors %}
+        <div class="alert" role="alert">Export blocked: {{ integrity_errors|join('; ') }}</div>
+      {% else %}
+        <span class="badge badge-safe">Integrity verified</span>
+      {% endif %}
+    </div>
+    {% if not integrity_errors %}
+      <a class="button button-primary" href="/cases/{{ case.id }}/evidence.zip">Download evidence ZIP</a>
+    {% endif %}
+  </section>
+
   {% set q = case.qualification %}
   <section id="qualification" class="panel qualification-panel">
     <div class="section-heading">

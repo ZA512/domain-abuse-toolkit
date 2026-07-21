@@ -31,6 +31,7 @@ This foundation currently includes:
 - restart-safe local case persistence with integrity verification;
 - action completion, automatic workflow state and immutable local event history;
 - human qualification revisions with confirmed criticality and override rationale;
+- deterministic evidence ZIP export with an included offline SHA-256 verifier;
 - unit tests for the first safety-critical behaviors.
 
 Network collection, browser capture, shared database persistence, scheduling, Microsoft Graph, and optional LLM integration are represented in the design but remain feature-gated until implemented and reviewed.
