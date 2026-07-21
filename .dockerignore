@@ -1,2 +1,7 @@
 *
-!src/domain_abuse_toolkit/capture_worker.py
+!pyproject.toml
+!README.md
+!src/
+!src/**
+!docker/
+!docker/**

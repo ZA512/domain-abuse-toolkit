@@ -43,7 +43,24 @@ Passive DNS/HTTP/TLS/RDAP collection and offline static rendering are implemente
 
 ## Quick start
 
-### Windows one-click test
+### Windows one-click Docker test
+
+For the simplest safe-mode launch:
+
+1. Start Docker Desktop.
+2. Stop any copy already listening on port 8080.
+3. Double-click `START_TOOLKIT_DOCKER.cmd`.
+4. Stop it with `STOP_TOOLKIT_DOCKER.cmd`.
+
+The first start builds the application image. Cases are stored in the named Docker volume `domain-abuse-toolkit-evidence`, not in the repository or its OneDrive folder. The container binds only to `127.0.0.1` and has no outbound network in this profile. Network collection, screenshots, external APIs, LLMs and message sending are disabled.
+
+Equivalent command-line launch:
+
+```powershell
+docker compose up --detach --build --wait
+```
+
+### Windows WSL test and current passive collection
 
 On the current Windows/WSL development setup:
 
@@ -56,6 +73,8 @@ To test passive technical collection and offline rendering, start Docker Desktop
 Maintainers can deliberately rebuild the capture image after changing its Dockerfile or worker with `PowerShell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-toolkit.ps1 -EnableNetworkCollection -EnableScreenshots -ForceCaptureImageBuild`. A failed build is retried three times to tolerate transient Docker Desktop metadata locks.
 
 The launchers keep the Python environments and private pilot cases under the WSL user profile, outside this public Git repository. See the [local testing guide](docs/testing-guide.md).
+
+The Docker safe-mode launcher is the target local runtime. The WSL network launcher remains temporarily necessary for the implemented passive DNS/HTTP/TLS/RDAP collection and its networkless offline screenshot worker. A future live browser will be a separate, ephemeral Playwright service behind controlled egress; the web container will never receive the Docker socket.
 
 ### Manual Python setup
 
@@ -104,6 +123,7 @@ Read [the security and evidence model](docs/security-and-evidence.md) before ena
 - [Product requirements v0.2](docs/PRD_v0.2.md)
 - [Operator journey](docs/operator-journey.md)
 - [Architecture](docs/architecture.md)
+- [ADR 0001: container runtime and browser isolation](docs/adr/0001-container-runtime-and-browser-isolation.md)
 - [Data model](docs/data-model.md)
 - [Security and evidence](docs/security-and-evidence.md)
 - [MVP backlog](docs/mvp-backlog.md)

@@ -98,10 +98,13 @@ Core case processing must continue when every optional adapter is disabled.
 ### Local pilot
 
 - localhost binding;
-- single process for the web layer;
-- local database and evidence directory;
+- Docker Compose safe profile with a fixed loopback reverse proxy and a single process for the web layer;
+- non-root, read-only application container without outbound connectivity;
+- named local Docker volume for case metadata and evidence;
 - network collection disabled unless explicitly enabled;
 - no SSO or shared access.
+
+The first Compose profile is intentionally smaller than the target diagram: it contains the web application plus a minimal fixed reverse proxy. The application cannot access Docker or the Internet; only the proxy bridges the Windows loopback listener to the internal application network. The migration and browser-isolation decision is recorded in [ADR 0001](adr/0001-container-runtime-and-browser-isolation.md). The existing WSL network launcher remains a transitional path for the implemented passive collectors and networkless renderer.
 
 ### Team pilot
 
