@@ -58,6 +58,48 @@ def test_screenshot_collector_creates_a_traced_derived_png() -> None:
     )
 
 
+def test_screenshot_collector_inlines_collected_css_without_browser_network() -> None:
+    stylesheet = PendingArtifact(
+        relative_path="10_snapshots/SNP-TEST/http/styles/00.css",
+        content=b"body { color: rgb(1, 2, 3); }",
+        media_type="text/css",
+        source="synthetic stylesheet evidence",
+        metadata={
+            "resource_type": "stylesheet",
+            "stylesheet_url": "https://example.com/app.css",
+            "truncated": False,
+        },
+    )
+
+    def styled_runner(
+        source_path: Path,
+        output_path: Path,
+        _request: dict[str, object],
+        _timeout_seconds: float,
+    ) -> dict[str, object]:
+        source = source_path.read_text(encoding="utf-8")
+        assert '<style data-dat-stylesheet="https://example.com/app.css">' in source
+        assert "body { color: rgb(1, 2, 3); }" in source
+        assert 'rel="stylesheet"' not in source
+        output_path.write_bytes(b"\x89PNG\r\n\x1a\nsynthetic")
+        return {"ok": True, "width": 1440, "height": 1000, "title": "Styled"}
+
+    output = ScreenshotCollector(runner=styled_runner).collect(
+        normalize_target("https://example.com/"),
+        "SNP-TEST",
+        _source(content=b'<link rel="stylesheet" href="/app.css"><h1>Evidence</h1>'),
+        [stylesheet],
+    )
+
+    observations = {item.name: item.value for item in output.result.observations}
+    assert output.result.status == CollectorStatus.COMPLETE
+    assert observations["stylesheets_inlined"] == "1"
+    assert output.artifacts[0].derived_from == (
+        "10_snapshots/SNP-TEST/http/00-body.bin",
+        "10_snapshots/SNP-TEST/http/styles/00.css",
+    )
+
+
 def test_screenshot_collector_skips_missing_or_truncated_html() -> None:
     collector = ScreenshotCollector(runner=successful_runner)
     target = normalize_target("https://example.com/")

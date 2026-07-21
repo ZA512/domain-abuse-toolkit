@@ -30,6 +30,7 @@ from domain_abuse_toolkit.security.targets import (
 )
 from domain_abuse_toolkit.services.collectors import CollectorBatchOutput
 from domain_abuse_toolkit.services.evidence import PendingArtifact
+from domain_abuse_toolkit.services.html_resources import extract_stylesheet_urls
 
 _REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 _SAFE_RESPONSE_HEADERS = {
@@ -54,6 +55,7 @@ _TEXTUAL_MEDIA_TYPES = {
     "application/xhtml+xml",
     "application/xml",
 }
+_HTML_MEDIA_TYPES = {"text/html", "application/xhtml+xml"}
 
 
 class WebTransportError(ValueError):
@@ -288,7 +290,7 @@ class DirectHttpClient:
 
 
 class WebCollector:
-    version = "1.0"
+    version = "1.1"
 
     def __init__(
         self,
@@ -300,6 +302,9 @@ class WebCollector:
         total_timeout_seconds: float = 30.0,
         max_redirects: int = 5,
         max_body_bytes: int = 256 * 1024,
+        max_stylesheets: int = 8,
+        max_stylesheet_bytes: int = 128 * 1024,
+        max_stylesheet_total_bytes: int = 512 * 1024,
     ) -> None:
         self.address_resolver = address_resolver or BoundedAddressResolver()
         self.client = client or DirectHttpClient()
@@ -308,6 +313,9 @@ class WebCollector:
         self.total_timeout_seconds = total_timeout_seconds
         self.max_redirects = max_redirects
         self.max_body_bytes = max_body_bytes
+        self.max_stylesheets = max_stylesheets
+        self.max_stylesheet_bytes = max_stylesheet_bytes
+        self.max_stylesheet_total_bytes = max_stylesheet_total_bytes
 
     def collect(self, target: NormalizedTarget, snapshot_id: str) -> CollectorBatchOutput:
         started_at = datetime.now(UTC)
@@ -323,6 +331,7 @@ class WebCollector:
         exchange_count = 0
         tls_count = 0
         final_response_reached = False
+        final_html_artifact: PendingArtifact | None = None
 
         for hop in range(self.max_redirects + 1):
             remaining = deadline - time.monotonic()
@@ -383,22 +392,27 @@ class WebCollector:
             http_observations.extend(_http_observations(exchange, hop))
             if exchange.body:
                 body_path = f"10_snapshots/{snapshot_id}/http/{hop:02d}-body.bin"
-                http_artifacts.append(
-                    PendingArtifact(
-                        relative_path=body_path,
-                        content=exchange.body,
-                        media_type=exchange.content_type,
-                        source=f"bounded HTTP response body hop {hop}",
-                        metadata={
-                            "collector": "http",
-                            "collector_version": self.version,
-                            "requested_url": exchange.requested_url,
-                            "status": exchange.status,
-                            "truncated": exchange.body_truncated,
-                            "sha256": hashlib.sha256(exchange.body).hexdigest(),
-                        },
-                    )
+                body_artifact = PendingArtifact(
+                    relative_path=body_path,
+                    content=exchange.body,
+                    media_type=exchange.content_type,
+                    source=f"bounded HTTP response body hop {hop}",
+                    metadata={
+                        "collector": "http",
+                        "collector_version": self.version,
+                        "requested_url": exchange.requested_url,
+                        "status": exchange.status,
+                        "truncated": exchange.body_truncated,
+                        "sha256": hashlib.sha256(exchange.body).hexdigest(),
+                    },
                 )
+                http_artifacts.append(body_artifact)
+                if (
+                    exchange.status not in _REDIRECT_STATUSES
+                    and exchange.content_type in _HTML_MEDIA_TYPES
+                    and not exchange.body_truncated
+                ):
+                    final_html_artifact = body_artifact
             if exchange.body_truncated:
                 http_errors.append(
                     CollectorError(
@@ -483,6 +497,16 @@ class WebCollector:
                 )
             current = next_target
 
+        if final_html_artifact is not None:
+            style_observations, style_artifacts, style_errors = self._collect_stylesheets(
+                final_html_artifact,
+                snapshot_id,
+                deadline,
+            )
+            http_observations.extend(style_observations)
+            http_artifacts.extend(style_artifacts)
+            http_errors.extend(style_errors)
+
         finished_at = datetime.now(UTC)
         http_status = _result_status(
             completed=final_response_reached,
@@ -521,6 +545,213 @@ class WebCollector:
             results=[http_result, tls_result],
             artifacts=[*http_artifacts, *tls_artifacts],
         )
+
+    def _collect_stylesheets(
+        self,
+        document: PendingArtifact,
+        snapshot_id: str,
+        deadline: float,
+    ) -> tuple[
+        list[CollectorObservation], list[PendingArtifact], list[CollectorError]
+    ]:
+        document_url = str(document.metadata.get("requested_url", ""))
+        urls = extract_stylesheet_urls(
+            document.content,
+            document_url,
+            max_stylesheets=self.max_stylesheets + 1,
+        )
+        observations: list[CollectorObservation] = []
+        artifacts: list[PendingArtifact] = []
+        errors: list[CollectorError] = []
+        if len(urls) > self.max_stylesheets:
+            errors.append(
+                CollectorError(
+                    code="stylesheet_count_limit",
+                    message=(
+                        f"The document declared more than {self.max_stylesheets} "
+                        "stylesheets; additional resources were not collected."
+                    ),
+                )
+            )
+            urls = urls[: self.max_stylesheets]
+        total_bytes = 0
+        for index, stylesheet_url in enumerate(urls):
+            if total_bytes >= self.max_stylesheet_total_bytes:
+                errors.append(
+                    CollectorError(
+                        code="stylesheet_total_limit",
+                        message="The stylesheet collection reached its total byte limit.",
+                    )
+                )
+                break
+            try:
+                current = normalize_target(stylesheet_url)
+            except TargetValidationError:
+                errors.append(
+                    CollectorError(
+                        code="stylesheet_url_invalid",
+                        message="A stylesheet URL violated the collection policy.",
+                    )
+                )
+                continue
+            exchange: HttpExchange | None = None
+            visited: set[str] = set()
+            for hop in range(min(self.max_redirects, 3) + 1):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    errors.append(
+                        CollectorError(
+                            code="stylesheet_timeout",
+                            message="Stylesheet collection exceeded the web deadline.",
+                            retryable=True,
+                        )
+                    )
+                    break
+                if current.normalized_url in visited:
+                    errors.append(
+                        CollectorError(
+                            code="stylesheet_redirect_loop",
+                            message="A stylesheet redirect chain contained a loop.",
+                        )
+                    )
+                    break
+                visited.add(current.normalized_url)
+                port = current.port or (443 if current.scheme == "https" else 80)
+                try:
+                    addresses = self.address_resolver.resolve(
+                        current.host, port, lifetime=remaining
+                    )
+                    address = _first_address(addresses)
+                    remaining = max(0.2, deadline - time.monotonic())
+                    phase_budget = remaining / 2
+                    exchange = self.client.request(
+                        current,
+                        address,
+                        connect_timeout=min(self.connect_timeout_seconds, phase_budget),
+                        read_timeout=min(self.read_timeout_seconds, phase_budget),
+                        max_body_bytes=min(
+                            self.max_stylesheet_bytes,
+                            self.max_stylesheet_total_bytes - total_bytes,
+                        ),
+                        accept="text/css,*/*;q=0.1",
+                    )
+                except TargetValidationError:
+                    errors.append(
+                        CollectorError(
+                            code="stylesheet_network_blocked",
+                            message=(
+                                "A stylesheet did not resolve exclusively to public "
+                                "addresses; no connection was attempted."
+                            ),
+                        )
+                    )
+                    exchange = None
+                    break
+                except WebTransportError as exc:
+                    errors.append(
+                        CollectorError(
+                            code="stylesheet_fetch_failed",
+                            message="A bounded stylesheet request failed.",
+                            retryable=exc.retryable,
+                        )
+                    )
+                    exchange = None
+                    break
+
+                observations.extend(
+                    [
+                        CollectorObservation(
+                            category="http",
+                            name=f"stylesheet_{index}.url",
+                            value=exchange.requested_url,
+                        ),
+                        CollectorObservation(
+                            category="http",
+                            name=f"stylesheet_{index}.status",
+                            value=str(exchange.status),
+                        ),
+                    ]
+                )
+                if exchange.status not in _REDIRECT_STATUSES:
+                    break
+                if not exchange.location or hop >= min(self.max_redirects, 3):
+                    errors.append(
+                        CollectorError(
+                            code="stylesheet_redirect_invalid",
+                            message="A stylesheet redirect could not be followed safely.",
+                        )
+                    )
+                    exchange = None
+                    break
+                redirected = urljoin(current.normalized_url, exchange.location)
+                try:
+                    next_target = normalize_target(redirected)
+                except TargetValidationError:
+                    errors.append(
+                        CollectorError(
+                            code="stylesheet_redirect_invalid",
+                            message="A stylesheet redirect violated the URL policy.",
+                        )
+                    )
+                    exchange = None
+                    break
+                if current.scheme == "https" and next_target.scheme == "http":
+                    errors.append(
+                        CollectorError(
+                            code="stylesheet_tls_downgrade",
+                            message="A stylesheet redirect attempted to downgrade HTTPS.",
+                        )
+                    )
+                    exchange = None
+                    break
+                current = next_target
+
+            if exchange is None:
+                continue
+            if not 200 <= exchange.status < 300 or exchange.content_type != "text/css":
+                errors.append(
+                    CollectorError(
+                        code="stylesheet_response_invalid",
+                        message="A stylesheet response was not a successful text/css resource.",
+                    )
+                )
+                continue
+            if not exchange.body or exchange.body_truncated:
+                errors.append(
+                    CollectorError(
+                        code="stylesheet_body_incomplete",
+                        message="A stylesheet body was empty or exceeded its byte limit.",
+                    )
+                )
+                continue
+            total_bytes += len(exchange.body)
+            relative_path = f"10_snapshots/{snapshot_id}/http/styles/{index:02d}.css"
+            artifacts.append(
+                PendingArtifact(
+                    relative_path=relative_path,
+                    content=exchange.body,
+                    media_type="text/css",
+                    source="bounded external stylesheet response",
+                    metadata={
+                        "collector": "http",
+                        "collector_version": self.version,
+                        "resource_type": "stylesheet",
+                        "stylesheet_url": stylesheet_url,
+                        "requested_url": exchange.requested_url,
+                        "status": exchange.status,
+                        "truncated": False,
+                        "sha256": hashlib.sha256(exchange.body).hexdigest(),
+                    },
+                )
+            )
+            observations.append(
+                CollectorObservation(
+                    category="http",
+                    name=f"stylesheet_{index}.body_sha256",
+                    value=hashlib.sha256(exchange.body).hexdigest(),
+                )
+            )
+        return observations, artifacts, errors
 
 
 def _first_address(addresses: tuple[str, ...]) -> str:

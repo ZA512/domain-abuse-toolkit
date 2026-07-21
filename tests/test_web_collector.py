@@ -43,6 +43,7 @@ class FakeHttpClient:
         connect_timeout: float,
         read_timeout: float,
         max_body_bytes: int,
+        accept: str | None = None,
     ) -> HttpExchange:
         assert connect_timeout > 0
         assert read_timeout > 0
@@ -79,8 +80,9 @@ def _exchange(
     body: bytes = b"ok",
     truncated: bool = False,
     tls: TlsPeer | None = None,
+    content_type: str = "text/html",
 ) -> HttpExchange:
-    headers = [("content-type", "text/html")]
+    headers = [("content-type", content_type)]
     if location:
         headers.append(("location", location))
     return HttpExchange(
@@ -90,7 +92,7 @@ def _exchange(
         reason="OK",
         safe_headers=headers,
         location=location,
-        content_type="text/html",
+        content_type=content_type,
         body=body,
         body_truncated=truncated,
         body_skipped_reason=None,
@@ -170,6 +172,63 @@ def test_bounded_body_is_marked_partial_and_stored_at_the_limit() -> None:
     assert output.results[0].status == CollectorStatus.PARTIAL
     assert output.results[0].errors[0].code == "http_body_truncated"
     assert output.artifacts[0].content == b"1234"
+
+
+def test_public_stylesheet_is_collected_as_bounded_original_evidence() -> None:
+    resolver = FakeAddressResolver(
+        {"example.net": ("8.8.8.8",), "cdn.example.net": ("1.1.1.1",)}
+    )
+    client = FakeHttpClient(
+        [
+            _exchange(
+                "https://example.net/",
+                body=b'<link rel="stylesheet" href="https://cdn.example.net/app.css">',
+            ),
+            _exchange(
+                "https://cdn.example.net/app.css",
+                body=b"body { color: red; }",
+                content_type="text/css",
+            ),
+        ]
+    )
+
+    output = WebCollector(address_resolver=resolver, client=client).collect(
+        normalize_target("https://example.net/"), "SNP-TEST"
+    )
+
+    stylesheet = next(
+        artifact for artifact in output.artifacts if artifact.media_type == "text/css"
+    )
+    assert output.results[0].status == CollectorStatus.COMPLETE
+    assert stylesheet.content == b"body { color: red; }"
+    assert stylesheet.metadata["stylesheet_url"] == "https://cdn.example.net/app.css"
+    assert stylesheet.metadata["resource_type"] == "stylesheet"
+    assert resolver.calls == [("example.net", 443), ("cdn.example.net", 443)]
+
+
+def test_private_stylesheet_is_blocked_before_connection() -> None:
+    resolver = FakeAddressResolver(
+        {
+            "example.net": ("8.8.8.8",),
+            "private.example.net": TargetValidationError("prohibited"),
+        }
+    )
+    client = FakeHttpClient(
+        [
+            _exchange(
+                "https://example.net/",
+                body=b'<link rel="stylesheet" href="http://private.example.net/app.css">',
+            )
+        ]
+    )
+
+    output = WebCollector(address_resolver=resolver, client=client).collect(
+        normalize_target("https://example.net/"), "SNP-TEST"
+    )
+
+    assert output.results[0].status == CollectorStatus.PARTIAL
+    assert output.results[0].errors[-1].code == "stylesheet_network_blocked"
+    assert len(client.calls) == 1
 
 
 class FakeDnsRecord:

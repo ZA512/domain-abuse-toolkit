@@ -249,8 +249,11 @@ class SuccessfulRdapCollector:
 class SuccessfulScreenshotCollector:
     version = "test"
 
-    def collect(self, _target, snapshot_id: str, source_artifact) -> CollectorOutput:  # type: ignore[no-untyped-def]
+    def collect(
+        self, _target, snapshot_id: str, source_artifact, stylesheet_artifacts
+    ) -> CollectorOutput:  # type: ignore[no-untyped-def]
         assert source_artifact is not None
+        assert isinstance(stylesheet_artifacts, list)
         now = datetime.now(UTC)
         path = f"10_snapshots/{snapshot_id}/capture/desktop.png"
         artifact = PendingArtifact(

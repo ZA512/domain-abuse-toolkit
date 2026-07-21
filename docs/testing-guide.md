@@ -46,7 +46,7 @@ Le lancement standard conserve tout accès réseau désactivé. Pour tester le p
 7. cocher l’autorisation dans **Collection**, puis cliquer sur **Start passive evidence collection** ;
 8. rafraîchir la fiche si le job est encore `queued` ou `running`.
 
-Cette action interroge les enregistrements DNS `A`, `AAAA`, `CNAME`, `MX`, `NS` et `TXT`, effectue une navigation HTTP/TLS bornée, puis découvre le service RDAP officiel depuis le registre IANA. Le résultat RDAP fournit notamment le registrar, son contact d’abus lorsqu’il est publié, les statuts et les dates du domaine. Le HTML borné est ensuite rendu hors ligne dans un conteneur jetable : réseau désactivé, JavaScript désactivé, système de fichiers en lecture seule, ressources bornées et aucun profil personnel. La capture est marquée comme dérivée du corps HTTP original. Aucun formulaire, cookie, script ou téléchargement n’est exécuté. Utiliser exclusivement une cible autorisée ; `example.com` convient pour un essai synthétique.
+Cette action interroge les enregistrements DNS `A`, `AAAA`, `CNAME`, `MX`, `NS` et `TXT`, effectue une navigation HTTP/TLS bornée, puis découvre le service RDAP officiel depuis le registre IANA. Le résultat RDAP fournit notamment le registrar, son contact d’abus lorsqu’il est publié, les statuts et les dates du domaine. Le HTML et jusqu’à huit feuilles `text/css` admissibles sont collectés avec les mêmes contrôles d’adresse, puis rendus hors ligne dans un conteneur jetable : réseau désactivé, JavaScript désactivé, système de fichiers en lecture seule, ressources bornées et aucun profil personnel. La capture est marquée comme dérivée du corps HTTP et des CSS utilisés. Aucun formulaire, cookie, script ou téléchargement n’est exécuté. Utiliser exclusivement une cible autorisée ; `example.com` convient pour un essai synthétique.
 
 ## Scénario de test conseillé
 
@@ -74,7 +74,7 @@ Vérifier ensuite :
 - qu’une adresse saisie dans **Email recipient** est ajoutée au brouillon ouvert dans le client mail.
 - qu’une soumission réellement effectuée peut être confirmée dans **Record a completed submission** avec sa référence externe ;
 - que le dossier passe à `waiting_external` et affiche automatiquement la prochaine échéance de relance.
-- en mode réseau volontaire, qu’un snapshot affiche les résultats DNS, HTTP, TLS, RDAP et SCREENSHOT, montre la capture statique, et ajoute tous ces éléments au ZIP de preuve ;
+- en mode réseau volontaire, qu’un snapshot affiche les résultats DNS, HTTP, TLS, RDAP et SCREENSHOT, montre la capture statique avec les feuilles CSS externes admissibles, et ajoute le HTML, les CSS et la capture dérivée au ZIP de preuve ;
 - qu’après une deuxième collecte, les changements normalisés apparaissent avant les détails bruts et que la prochaine date de contrôle est visible dans le dossier et sur l’accueil.
 
 Après extraction complète du ZIP, ouvrir PowerShell dans le dossier du dossier exporté puis lancer :
@@ -101,4 +101,4 @@ Le nombre de tests peut augmenter au fil du développement. Après avoir créé 
 
 ## Limite de ce premier test
 
-Les envois, Microsoft Graph et l’IA restent désactivés. La collecte DNS/HTTP/TLS/RDAP et le rendu statique peuvent être activés volontairement. Le rendu n’est pas une capture complète d’un site dynamique : les scripts et ressources externes ne sont jamais chargés. Les réponses RDAP brutes peuvent contenir des données personnelles publiées par le registre. L’enregistrement d’une soumission est une confirmation humaine locale : l’outil ne soumet aucun formulaire et n’envoie aucun message.
+Les envois, Microsoft Graph et l’IA restent désactivés. La collecte DNS/HTTP/TLS/RDAP et le rendu statique peuvent être activés volontairement. Le rendu n’est pas une capture complète d’un site dynamique : seules les feuilles `text/css` admissibles sont collectées séparément puis injectées hors ligne ; scripts, images, polices, imports CSS et autres ressources restent bloqués. Les réponses RDAP brutes peuvent contenir des données personnelles publiées par le registre. L’enregistrement d’une soumission est une confirmation humaine locale : l’outil ne soumet aucun formulaire et n’envoie aucun message.

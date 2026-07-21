@@ -46,6 +46,7 @@ class PassiveScreenshotCollector(Protocol):
         target: NormalizedTarget,
         snapshot_id: str,
         source_artifact: PendingArtifact | None,
+        stylesheet_artifacts: list[PendingArtifact],
     ) -> CollectorOutput: ...
 
 
@@ -243,9 +244,20 @@ class CollectionJobService:
                 ),
                 None,
             )
+            stylesheet_artifacts = [
+                artifact
+                for artifact in artifacts
+                if artifact.metadata.get("collector") == "http"
+                and artifact.metadata.get("resource_type") == "stylesheet"
+                and artifact.media_type == "text/css"
+                and not artifact.metadata.get("truncated")
+            ]
             try:
                 screenshot_output = self.screenshot_collector.collect(
-                    target, job.snapshot_id, source_artifact
+                    target,
+                    job.snapshot_id,
+                    source_artifact,
+                    stylesheet_artifacts,
                 )
             except Exception:  # isolated worker boundary hides hostile document details
                 screenshot_output = CollectorOutput(

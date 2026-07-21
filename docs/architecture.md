@@ -63,7 +63,7 @@ The local pilot now executes bounded DNS/HTTP/TLS/RDAP jobs in a small in-proces
 
 ### Browser worker
 
-The pilot’s static rendering worker is launched as an ephemeral Docker container after the bounded HTTP body has been collected. It receives no evidence-store credential or host mount, has `--network=none`, a read-only root filesystem, dropped capabilities and strict resource limits, disables JavaScript and all browser requests, and returns a single PNG over standard I/O. The PNG is recorded as a derived artifact linked to the original HTTP body. A future live capture worker would require a separately reviewed egress proxy and stronger production orchestration before it may navigate hostile sites.
+The pilot’s static rendering worker is launched as an ephemeral Docker container after the bounded HTTP body has been collected. Eligible external `text/css` stylesheets are fetched separately by the validated HTTP client with public-address checks, redirect revalidation, count and byte limits, and immutable storage. Those stored stylesheets are inlined into an in-memory rendering source. The worker receives no evidence-store credential or host mount, has `--network=none`, a read-only root filesystem, dropped capabilities and strict resource limits, disables JavaScript and all browser requests, and returns a single PNG over standard I/O. The PNG is recorded as a derived artifact linked to the original HTTP body and every supplied stylesheet. Fonts, images, CSS `@import` resources and CSS `url()` resources remain blocked. A future live capture worker would require a separately reviewed egress proxy and stronger production orchestration before it may navigate hostile sites.
 
 ### Relational database
 

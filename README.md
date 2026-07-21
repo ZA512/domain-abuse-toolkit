@@ -35,7 +35,7 @@ This foundation currently includes:
 - versioned official reporting-channel catalogue and bilingual form-ready summaries;
 - operator-confirmed submission records with external references and criticality-based follow-up dates;
 - an explicit passive DNS/HTTP/TLS/RDAP job with validated-IP connections, redirect revalidation, bounded bodies, raw certificates, authoritative registration data and normalized observations;
-- a Docker-isolated offline desktop rendering of the bounded HTML evidence, with JavaScript and all container networking disabled;
+- a Docker-isolated offline desktop rendering of bounded HTML and separately collected CSS evidence, with JavaScript and all container networking disabled;
 - automatic normalized diffs between successive snapshots and criticality-based dates for the next operator-triggered technical review;
 - unit tests for the first safety-critical behaviors.
 
@@ -89,7 +89,7 @@ pytest
 - The service binds to localhost by default.
 - Network collection, screenshots, external APIs, LLMs, and Microsoft Graph are off by default.
 - The opt-in network mode performs bounded DNS, one controlled HTTP/TLS navigation, and authoritative RDAP discovery through IANA; every redirect is revalidated before connection.
-- The browser never revisits the target: it renders only the bounded stored HTML inside an ephemeral, networkless, read-only Docker container with JavaScript disabled.
+- The browser never revisits the target: it renders only bounded stored HTML plus eligible CSS collected beforehand through the validated HTTP client, inside an ephemeral, networkless, read-only Docker container with JavaScript disabled.
 - Private, loopback, link-local, multicast, reserved, and unspecified IP targets are rejected.
 - Redirect targets must be revalidated before a collector follows them.
 - Evidence and private directories are ignored by Git.

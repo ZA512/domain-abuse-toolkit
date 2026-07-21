@@ -24,6 +24,7 @@ from domain_abuse_toolkit.models import (
 )
 from domain_abuse_toolkit.services.collectors import CollectorOutput
 from domain_abuse_toolkit.services.evidence import PendingArtifact
+from domain_abuse_toolkit.services.html_resources import inline_collected_stylesheets
 
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 _HTML_MEDIA_TYPES = {"text/html", "application/xhtml+xml"}
@@ -40,7 +41,7 @@ class CaptureWorkerError(ValueError):
 class ScreenshotCollector:
     """Render bounded HTTP evidence in a separate, network-blocked browser worker."""
 
-    version = "1.0"
+    version = "1.1"
 
     def __init__(
         self,
@@ -48,6 +49,7 @@ class ScreenshotCollector:
         runner: WorkerRunner | None = None,
         timeout_seconds: float = 25.0,
         max_input_bytes: int = 256 * 1024,
+        max_render_input_bytes: int = 1024 * 1024,
         max_output_bytes: int = 10 * 1024 * 1024,
         viewport_width: int = 1440,
         viewport_height: int = 1000,
@@ -56,6 +58,7 @@ class ScreenshotCollector:
         self.runner = runner or run_capture_worker
         self.timeout_seconds = timeout_seconds
         self.max_input_bytes = max_input_bytes
+        self.max_render_input_bytes = max_render_input_bytes
         self.max_output_bytes = max_output_bytes
         self.viewport_width = viewport_width
         self.viewport_height = viewport_height
@@ -66,6 +69,7 @@ class ScreenshotCollector:
         target: NormalizedTarget,
         snapshot_id: str,
         source_artifact: PendingArtifact | None,
+        stylesheet_artifacts: list[PendingArtifact] | None = None,
     ) -> CollectorOutput:
         started_at = datetime.now(UTC)
         if source_artifact is None:
@@ -113,6 +117,23 @@ class ScreenshotCollector:
                 ],
             )
 
+        rendered_source, stylesheets_inlined = inline_collected_stylesheets(
+            source_artifact.content,
+            str(source_artifact.metadata.get("requested_url", target.normalized_url)),
+            stylesheet_artifacts or [],
+        )
+        if len(rendered_source) > self.max_render_input_bytes:
+            return self._result(
+                started_at,
+                CollectorStatus.FAILED,
+                errors=[
+                    CollectorError(
+                        code="capture_render_input_too_large",
+                        message="The HTML and collected styles exceeded the render limit.",
+                    )
+                ],
+            )
+
         request = {
             "viewport_width": self.viewport_width,
             "viewport_height": self.viewport_height,
@@ -128,7 +149,7 @@ class ScreenshotCollector:
                 workspace = Path(temporary)
                 source_path = workspace / "source.html"
                 output_path = workspace / "desktop.png"
-                source_path.write_bytes(source_artifact.content)
+                source_path.write_bytes(rendered_source)
                 metadata = self.runner(
                     source_path, output_path, request, self.timeout_seconds
                 )
@@ -172,9 +193,13 @@ class ScreenshotCollector:
                 "network": "blocked",
                 "viewport_width": _bounded_int(metadata.get("width"), 1, 10000),
                 "captured_height": _bounded_int(metadata.get("height"), 1, 10000),
+                "stylesheets_inlined": stylesheets_inlined,
             },
             classification="derived",
-            derived_from=(source_artifact.relative_path,),
+            derived_from=(
+                source_artifact.relative_path,
+                *(artifact.relative_path for artifact in stylesheet_artifacts or []),
+            ),
         )
         observations = [
             CollectorObservation(
@@ -201,6 +226,11 @@ class ScreenshotCollector:
                 category="capture",
                 name="image_sha256",
                 value=hashlib.sha256(screenshot).hexdigest(),
+            ),
+            CollectorObservation(
+                category="capture",
+                name="stylesheets_inlined",
+                value=str(stylesheets_inlined),
             ),
         ]
         title = _safe_text(metadata.get("title"), limit=300)
