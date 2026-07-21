@@ -1,8 +1,8 @@
 @echo off
 setlocal
-title Domain Abuse Toolkit - Collecte DNS passive
+title Domain Abuse Toolkit - Collecte technique passive
 echo.
-echo ATTENTION : ce mode autorise les requetes DNS uniquement apres un clic confirme.
+echo ATTENTION : ce mode autorise la collecte DNS/HTTP/TLS apres un clic confirme.
 echo L'ouverture d'un dossier ne declenche aucune collecte.
 echo Utilisez uniquement des cibles pour lesquelles vous etes autorise.
 echo.

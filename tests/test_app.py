@@ -55,6 +55,12 @@ def test_dns_collection_is_disabled_by_default_and_requires_opt_in(
     assert rejected.status_code == 403
     assert "disabled" in rejected.json()["detail"]
 
+    passive_rejected = client.post(
+        f"/api/v1/cases/{created['id']}/collections/passive",
+        json={"confirmed_authorized": True},
+    )
+    assert passive_rejected.status_code == 403
+
     detail = client.get(f"/cases/{created['id']}")
     assert "Opening this case never contacts the target" in detail.text
     assert "Network collection is disabled by default" in detail.text

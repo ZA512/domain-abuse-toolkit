@@ -33,7 +33,7 @@ Le premier lancement peut durer une ou deux minutes. Les suivants sont plus rapi
 
 Pour arrêter, utiliser `Ctrl+C` dans la fenêtre intitulée **Domain Abuse Toolkit - Serveur**, fermer cette fenêtre ou double-cliquer sur `STOP_TOOLKIT.cmd`.
 
-## Activer volontairement la collecte DNS
+## Activer volontairement la collecte technique
 
 Le lancement standard conserve tout accès réseau désactivé. Pour tester le premier collecteur :
 
@@ -41,10 +41,10 @@ Le lancement standard conserve tout accès réseau désactivé. Pour tester le p
 2. double-cliquer sur `START_TOOLKIT_NETWORK.cmd` ;
 3. lire l’avertissement puis entrer `OUI` ;
 4. ouvrir un dossier synthétique autorisé ;
-5. cocher l’autorisation dans **Collection**, puis cliquer sur **Start passive DNS collection** ;
+5. cocher l’autorisation dans **Collection**, puis cliquer sur **Start passive evidence collection** ;
 6. rafraîchir la fiche si le job est encore `queued` ou `running`.
 
-Cette action interroge uniquement les enregistrements DNS `A`, `AAAA`, `CNAME`, `MX`, `NS` et `TXT`. Elle n’ouvre pas le site cible. Utiliser exclusivement une cible autorisée ; `example.com` convient pour un essai synthétique.
+Cette action interroge les enregistrements DNS `A`, `AAAA`, `CNAME`, `MX`, `NS` et `TXT`, puis effectue une navigation HTTP/TLS bornée. La connexion utilise une adresse publique préalablement validée, conserve le nom d’hôte/SNI et revalide chaque redirection. Aucun formulaire, cookie, script ou téléchargement n’est exécuté. Utiliser exclusivement une cible autorisée ; `example.com` convient pour un essai synthétique.
 
 ## Scénario de test conseillé
 
@@ -72,7 +72,7 @@ Vérifier ensuite :
 - qu’une adresse saisie dans **Email recipient** est ajoutée au brouillon ouvert dans le client mail.
 - qu’une soumission réellement effectuée peut être confirmée dans **Record a completed submission** avec sa référence externe ;
 - que le dossier passe à `waiting_external` et affiche automatiquement la prochaine échéance de relance.
-- en mode réseau volontaire, qu’un snapshot DNS affiche ses observations et ajoute les réponses brutes au ZIP de preuve.
+- en mode réseau volontaire, qu’un snapshot affiche les résultats DNS, HTTP et TLS et ajoute les réponses DNS, le corps textuel borné et le certificat au ZIP de preuve.
 
 Après extraction complète du ZIP, ouvrir PowerShell dans le dossier du dossier exporté puis lancer :
 
@@ -90,7 +90,7 @@ La fenêtre doit terminer par :
 
 ```text
 All checks passed!
-52 passed
+57 passed
 SUCCES - tous les controles passent.
 ```
 
@@ -98,4 +98,4 @@ Le nombre de tests peut augmenter au fil du développement. Après avoir créé 
 
 ## Limite de ce premier test
 
-La collecte HTTP/TLS/RDAP, les captures, les envois, Microsoft Graph et l’IA restent désactivés. Seule la collecte DNS passive peut être activée volontairement. L’enregistrement d’une soumission est une confirmation humaine locale : l’outil ne soumet aucun formulaire et n’envoie aucun message.
+La collecte RDAP, les captures, les envois, Microsoft Graph et l’IA restent désactivés. La collecte DNS/HTTP/TLS peut être activée volontairement. L’enregistrement d’une soumission est une confirmation humaine locale : l’outil ne soumet aucun formulaire et n’envoie aucun message.

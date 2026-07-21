@@ -31,6 +31,12 @@ class CollectorOutput:
     artifacts: list[PendingArtifact]
 
 
+@dataclass(frozen=True)
+class CollectorBatchOutput:
+    results: list[CollectorResult]
+    artifacts: list[PendingArtifact]
+
+
 class DnsCollector:
     """Bounded passive DNS collector that preserves normalized and wire results."""
 

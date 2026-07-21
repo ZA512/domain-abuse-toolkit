@@ -16,7 +16,11 @@ from domain_abuse_toolkit.services.collection_jobs import (
     CollectionJobService,
     CollectionQueueFullError,
 )
-from domain_abuse_toolkit.services.collectors import CollectorOutput, DnsCollector
+from domain_abuse_toolkit.services.collectors import (
+    CollectorBatchOutput,
+    CollectorOutput,
+    DnsCollector,
+)
 from domain_abuse_toolkit.services.drafts import DraftService
 from domain_abuse_toolkit.services.evidence import EvidenceStore, PendingArtifact
 
@@ -169,6 +173,32 @@ class BlockingCollector(SuccessfulCollector):
         return super().collect(target, snapshot_id)
 
 
+class SuccessfulWebCollector:
+    version = "test"
+
+    def collect(self, _target, _snapshot_id: str) -> CollectorBatchOutput:  # type: ignore[no-untyped-def]
+        now = datetime.now(UTC)
+        return CollectorBatchOutput(
+            results=[
+                CollectorResult(
+                    collector="http",
+                    version=self.version,
+                    status=CollectorStatus.COMPLETE,
+                    started_at=now,
+                    finished_at=now,
+                ),
+                CollectorResult(
+                    collector="tls",
+                    version=self.version,
+                    status=CollectorStatus.SKIPPED,
+                    started_at=now,
+                    finished_at=now,
+                ),
+            ],
+            artifacts=[],
+        )
+
+
 def test_collection_job_persists_snapshot_and_survives_restart(tmp_path) -> None:  # type: ignore[no-untyped-def]
     service = CaseService(EvidenceStore(tmp_path), DraftService())
     case = service.create(
@@ -218,3 +248,27 @@ def test_collection_queue_has_a_global_pending_limit(tmp_path) -> None:  # type:
 
     collector.release.set()
     assert jobs.wait(first.id).status == CollectorStatus.COMPLETE
+
+
+def test_full_passive_job_combines_dns_http_and_tls_results(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    service = CaseService(EvidenceStore(tmp_path), DraftService())
+    case = service.create(
+        CaseCreate(
+            target="https://login.example.net/",
+            brand="Example Brand",
+            legit_url="https://www.example.com/",
+        )
+    )
+    jobs = CollectionJobService(
+        service, SuccessfulCollector(), SuccessfulWebCollector()
+    )
+
+    queued = jobs.start_passive(case.id)
+    finished = jobs.wait(queued.id)
+
+    assert finished.status == CollectorStatus.COMPLETE
+    assert [result.collector for result in case.snapshots[0].results] == [
+        "dns",
+        "http",
+        "tls",
+    ]

@@ -11,6 +11,7 @@ requires-python = ">=3.12"
 license = { text = "Proprietary - license not yet selected" }
 authors = [{ name = "Domain Abuse Toolkit contributors" }]
 dependencies = [
+  "cryptography>=49,<50",
   "dnspython>=2.8,<3",
   "fastapi>=0.116,<1",
   "httpx>=0.28,<1",

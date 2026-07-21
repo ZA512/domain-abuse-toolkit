@@ -130,16 +130,16 @@
         <div><dt>External APIs</dt><dd>{{ "Enabled" if capabilities.external_apis else "Disabled" }}</dd></div>
         <div><dt>LLM</dt><dd>{{ "Enabled" if capabilities.llm else "Disabled" }}</dd></div>
       </dl>
-      <p class="callout">Opening this case never contacts the target. The first collector queries DNS only; it does not open the suspicious website.</p>
+      <p class="callout">Opening this case never contacts the target. An authorized passive job collects DNS, a bounded HTTP response and the TLS leaf certificate.</p>
       {% if collection_error %}<div class="alert" role="alert">{{ collection_error }}</div>{% endif %}
       {% if capabilities.network_collection %}
-        <form action="/cases/{{ case.id }}/collections/dns" method="post" class="collection-form">
+        <form action="/cases/{{ case.id }}/collections/passive" method="post" class="collection-form">
           <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
           <label class="confirmation-check">
             <input type="checkbox" name="confirmed_authorized" value="true" required>
-            <span>I am authorized to perform passive DNS collection for this target.</span>
+            <span>I am authorized to perform passive DNS and bounded HTTP/TLS collection for this target.</span>
           </label>
-          <button class="button button-primary" type="submit"{% if latest_collection_job and latest_collection_job.status in ['queued', 'running'] %} disabled{% endif %}>Start passive DNS collection</button>
+          <button class="button button-primary" type="submit"{% if latest_collection_job and latest_collection_job.status in ['queued', 'running'] %} disabled{% endif %}>Start passive evidence collection</button>
         </form>
       {% else %}
         <p class="collection-disabled">Network collection is disabled by default. Restart with the dedicated opt-in launcher when you are ready to test it.</p>
@@ -153,7 +153,7 @@
   {% if snapshots %}
     <section class="panel snapshot-panel">
       <div class="section-heading">
-        <div><p class="eyebrow">Passive evidence</p><h2>DNS snapshots</h2></div>
+        <div><p class="eyebrow">Passive evidence</p><h2>Technical snapshots</h2></div>
         <span class="badge">{{ snapshots|length }} snapshot{{ 's' if snapshots|length != 1 else '' }}</span>
       </div>
       <div class="snapshot-stack">
@@ -168,7 +168,7 @@
               {% if result.observations %}
                 <div class="dns-records">
                   {% for observation in result.observations %}
-                    <div><span>{{ observation.record_type or observation.category }}</span><code class="break-anywhere">{{ observation.value }}</code>{% if observation.ttl is not none %}<small>TTL {{ observation.ttl }}</small>{% endif %}</div>
+                    <div><span>{{ observation.record_type or observation.category }}</span><code class="break-anywhere">{{ observation.name }} · {{ observation.value }}</code>{% if observation.ttl is not none %}<small>TTL {{ observation.ttl }}</small>{% endif %}</div>
                   {% endfor %}
                 </div>
               {% endif %}

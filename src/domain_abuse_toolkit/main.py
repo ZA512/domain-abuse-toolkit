@@ -48,6 +48,10 @@ from domain_abuse_toolkit.services.reporting import (
     ReportingCatalogueError,
     ReportingService,
 )
+from domain_abuse_toolkit.services.web_collector import (
+    BoundedAddressResolver,
+    WebCollector,
+)
 
 settings = get_settings()
 package_root = Path(__file__).resolve().parent
@@ -65,6 +69,17 @@ collection_jobs = CollectionJobService(
         timeout_seconds=settings.dns_timeout_seconds,
         lifetime_seconds=settings.dns_lifetime_seconds,
         max_records_per_type=settings.max_dns_records_per_type,
+    ),
+    WebCollector(
+        address_resolver=BoundedAddressResolver(
+            timeout_seconds=settings.dns_timeout_seconds,
+            lifetime_seconds=settings.dns_lifetime_seconds,
+        ),
+        connect_timeout_seconds=settings.http_connect_timeout_seconds,
+        read_timeout_seconds=settings.http_read_timeout_seconds,
+        total_timeout_seconds=settings.http_total_timeout_seconds,
+        max_redirects=settings.http_max_redirects,
+        max_body_bytes=settings.http_max_body_bytes,
     ),
     max_pending_jobs=settings.max_pending_collection_jobs,
 )
@@ -438,6 +453,36 @@ def _start_dns_collection(case_id: str, *, confirmed_authorized: bool):  # type:
     return collection_jobs.start_dns(case_id)
 
 
+@app.post("/cases/{case_id}/collections/passive")
+def start_passive_collection_form(
+    case_id: str,
+    confirmed_authorized: Annotated[bool, Form()] = False,
+    csrf_token: Annotated[str, Form(alias="_csrf_token")] = "",
+):  # type: ignore[no-untyped-def]
+    _verify_form_csrf(csrf_token)
+    try:
+        _start_passive_collection(case_id, confirmed_authorized=confirmed_authorized)
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Case not found") from exc
+    except ValueError as exc:
+        encoded_error = quote(str(exc), safe="")
+        return RedirectResponse(
+            url=f"/cases/{case_id}?collection_error={encoded_error}#collection",
+            status_code=303,
+        )
+    return RedirectResponse(url=f"/cases/{case_id}#collection", status_code=303)
+
+
+def _start_passive_collection(
+    case_id: str, *, confirmed_authorized: bool
+):  # type: ignore[no-untyped-def]
+    if not settings.enable_network_collection:
+        raise ValueError("Network collection is disabled in this server process.")
+    if not confirmed_authorized:
+        raise ValueError("Confirm authorization before starting passive collection.")
+    return collection_jobs.start_passive(case_id)
+
+
 @app.post("/cases/{case_id}/actions/{action_code}")
 def update_action_form(
     case_id: str,
@@ -549,6 +594,23 @@ def start_dns_collection_api(
 ) -> dict[str, object]:
     try:
         job = _start_dns_collection(
+            case_id, confirmed_authorized=request.confirmed_authorized
+        )
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Case not found") from exc
+    except (CollectionAlreadyRunningError, CollectionQueueFullError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    return job.model_dump(mode="json")
+
+
+@app.post("/api/v1/cases/{case_id}/collections/passive", status_code=202)
+def start_passive_collection_api(
+    case_id: str, request: CollectionStart
+) -> dict[str, object]:
+    try:
+        job = _start_passive_collection(
             case_id, confirmed_authorized=request.confirmed_authorized
         )
     except CaseNotFoundError as exc:

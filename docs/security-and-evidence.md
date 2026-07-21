@@ -36,6 +36,12 @@ The local pilot keeps network collection disabled unless started with the dedica
 
 Successful DNS response messages are preserved as `application/dns-message` originals below `10_snapshots/<snapshot-id>/dns/`. The normalized snapshot and its failure details are stored as an immutable event. DNS collection does not imply that the website was opened or that its content was reviewed.
 
+### Current HTTP/TLS implementation
+
+After the DNS safety gate succeeds, the local worker resolves the current host again, rejects the entire answer set if any address is non-global, selects one validated address deterministically, and connects directly to it while preserving the intended HTTP `Host` and TLS SNI. Every redirect is normalized, length-limited, loop-checked, freshly resolved and revalidated. Redirects to credentials, prohibited schemes, non-standard ports or non-public networks stop before a connection. HTTPS-to-HTTP downgrade is retained as a structured warning.
+
+The request sends no cookie, authorization value or browser state, asks for identity encoding and a bounded byte range, and uses `Connection: close`. Only textual, JSON or XML response bodies are retained, up to the configured limit; attachment and other content types are not downloaded. Human-facing observations use an explicit response-header allowlist that excludes `Set-Cookie`. The TLS handshake uses TLS 1.2 or later for evidence capture, stores the leaf DER certificate, and records fingerprint, subject, issuer, SAN, validity, protocol and cipher. Certificate trust validation is deliberately reported as not performed; the collected certificate is evidence, not a trust decision.
+
 ## Browser isolation
 
 The browser worker must not run inside the web application process. It requires:

@@ -16,13 +16,22 @@ from domain_abuse_toolkit.models import (
     SnapshotEvent,
 )
 from domain_abuse_toolkit.services.cases import CaseService
-from domain_abuse_toolkit.services.collectors import CollectorOutput
+from domain_abuse_toolkit.services.collectors import CollectorBatchOutput, CollectorOutput
+from domain_abuse_toolkit.services.evidence import PendingArtifact
 
 
 class PassiveCollector(Protocol):
     version: str
 
     def collect(self, target: NormalizedTarget, snapshot_id: str) -> CollectorOutput: ...
+
+
+class PassiveWebCollector(Protocol):
+    version: str
+
+    def collect(
+        self, target: NormalizedTarget, snapshot_id: str
+    ) -> CollectorBatchOutput: ...
 
 
 class CollectionAlreadyRunningError(ValueError):
@@ -51,12 +60,14 @@ class CollectionJobService:
         self,
         case_service: CaseService,
         dns_collector: PassiveCollector,
+        web_collector: PassiveWebCollector | None = None,
         *,
         max_workers: int = 2,
         max_pending_jobs: int = 10,
     ) -> None:
         self.case_service = case_service
         self.dns_collector = dns_collector
+        self.web_collector = web_collector
         self._executor = ThreadPoolExecutor(
             max_workers=max_workers, thread_name_prefix="dat-collector"
         )
@@ -66,6 +77,14 @@ class CollectionJobService:
         self._futures: dict[str, Future[None]] = {}
 
     def start_dns(self, case_id: str) -> CollectionJobView:
+        return self._start(case_id, self._run_dns)
+
+    def start_passive(self, case_id: str) -> CollectionJobView:
+        if self.web_collector is None:
+            raise ValueError("The HTTP/TLS collector is not configured.")
+        return self._start(case_id, self._run_passive)
+
+    def _start(self, case_id: str, worker) -> CollectionJobView:  # type: ignore[no-untyped-def]
         record = self.case_service.get(case_id)
         with self._lock:
             active_jobs = [
@@ -93,9 +112,7 @@ class CollectionJobService:
                 queued_at=datetime.now(UTC),
             )
             self._jobs[job.id] = job
-            future = self._executor.submit(
-                self._run_dns, job.id, record.target.model_copy(deep=True)
-            )
+            future = self._executor.submit(worker, job.id, record.target.model_copy(deep=True))
             self._futures[job.id] = future
             return job.model_copy(deep=True)
 
@@ -105,37 +122,103 @@ class CollectionJobService:
         try:
             output = self.dns_collector.collect(target, job.snapshot_id)
         except Exception:  # collector boundary deliberately hides target-controlled details
-            now = datetime.now(UTC)
             output = CollectorOutput(
-                result=CollectorResult(
-                    collector="dns",
-                    version=self.dns_collector.version,
-                    status=CollectorStatus.FAILED,
-                    started_at=job.started_at or now,
-                    finished_at=now,
-                    errors=[
-                        CollectorError(
-                            code="collector_failure",
-                            message="The DNS collector stopped unexpectedly.",
-                            retryable=True,
-                        )
-                    ],
+                result=self._failed_result(
+                    "dns",
+                    self.dns_collector.version,
+                    job.started_at,
+                    "The DNS collector stopped unexpectedly.",
+                ),
+                artifacts=[],
+            )
+        self._persist(job_id, [output.result], output.artifacts)
+
+    def _run_passive(self, job_id: str, target: NormalizedTarget) -> None:
+        self._update(job_id, status=CollectorStatus.RUNNING, started_at=datetime.now(UTC))
+        job = self.get(job_id)
+        try:
+            dns_output = self.dns_collector.collect(target, job.snapshot_id)
+        except Exception:  # collector boundary deliberately hides target-controlled details
+            dns_output = CollectorOutput(
+                result=self._failed_result(
+                    "dns",
+                    self.dns_collector.version,
+                    job.started_at,
+                    "The DNS collector stopped unexpectedly.",
                 ),
                 artifacts=[],
             )
 
-        result = output.result
+        results = [dns_output.result]
+        artifacts = list(dns_output.artifacts)
+        if dns_output.result.status == CollectorStatus.FAILED:
+            now = datetime.now(UTC)
+            for collector in ("http", "tls"):
+                results.append(
+                    CollectorResult(
+                        collector=collector,
+                        version=self.web_collector.version if self.web_collector else "1.0",
+                        status=CollectorStatus.SKIPPED,
+                        started_at=now,
+                        finished_at=now,
+                        errors=[
+                            CollectorError(
+                                code="dns_safety_gate_failed",
+                                message=(
+                                    "The connection-based collector was skipped because "
+                                    "the DNS safety gate failed."
+                                ),
+                            )
+                        ],
+                    )
+                )
+        else:
+            try:
+                assert self.web_collector is not None
+                web_output = self.web_collector.collect(target, job.snapshot_id)
+            except Exception:  # collector boundary deliberately hides target-controlled details
+                web_output = CollectorBatchOutput(
+                    results=[
+                        self._failed_result(
+                            "http",
+                            self.web_collector.version if self.web_collector else "1.0",
+                            job.started_at,
+                            "The HTTP/TLS collector stopped unexpectedly.",
+                        ),
+                        self._failed_result(
+                            "tls",
+                            self.web_collector.version if self.web_collector else "1.0",
+                            job.started_at,
+                            "The HTTP/TLS collector stopped unexpectedly.",
+                        ),
+                    ],
+                    artifacts=[],
+                )
+            results.extend(web_output.results)
+            artifacts.extend(web_output.artifacts)
+        self._persist(job_id, results, artifacts)
+
+    def _persist(
+        self,
+        job_id: str,
+        results: list[CollectorResult],
+        artifacts: list[PendingArtifact],
+    ) -> None:
+        job = self.get(job_id)
+        started_at = min(result.started_at for result in results)
+        finished_at = max(result.finished_at for result in results)
+        status = self._snapshot_status(results)
         snapshot = SnapshotEvent(
             id=job.snapshot_id,
             case_id=job.case_id,
-            status=result.status,
-            started_at=result.started_at,
-            finished_at=result.finished_at,
-            results=[result],
-            occurred_at=result.finished_at,
+            status=status,
+            started_at=started_at,
+            finished_at=finished_at,
+            results=results,
+            occurred_at=finished_at,
         )
         try:
-            self.case_service.record_snapshot(snapshot, output.artifacts)
+            self.case_service.record_snapshot(snapshot, artifacts)
         except Exception:
             self._update(
                 job_id,
@@ -146,9 +229,49 @@ class CollectionJobService:
             return
         self._update(
             job_id,
-            status=result.status,
-            finished_at=result.finished_at,
-            error=result.errors[0].message if result.status == CollectorStatus.FAILED else None,
+            status=status,
+            finished_at=finished_at,
+            error=next(
+                (
+                    error.message
+                    for result in results
+                    if result.status == CollectorStatus.FAILED
+                    for error in result.errors
+                ),
+                None,
+            ),
+        )
+
+    @staticmethod
+    def _snapshot_status(results: list[CollectorResult]) -> CollectorStatus:
+        active = [result.status for result in results if result.status != CollectorStatus.SKIPPED]
+        if active and all(status == CollectorStatus.COMPLETE for status in active):
+            return CollectorStatus.COMPLETE
+        if active and all(status == CollectorStatus.FAILED for status in active):
+            return CollectorStatus.FAILED
+        return CollectorStatus.PARTIAL
+
+    @staticmethod
+    def _failed_result(
+        collector: str,
+        version: str,
+        started_at: datetime | None,
+        message: str,
+    ) -> CollectorResult:
+        now = datetime.now(UTC)
+        return CollectorResult(
+            collector=collector,
+            version=version,
+            status=CollectorStatus.FAILED,
+            started_at=started_at or now,
+            finished_at=now,
+            errors=[
+                CollectorError(
+                    code="collector_failure",
+                    message=message,
+                    retryable=True,
+                )
+            ],
         )
 
     def _update(self, job_id: str, **updates) -> None:  # type: ignore[no-untyped-def]

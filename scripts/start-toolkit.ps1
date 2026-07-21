@@ -143,7 +143,7 @@ if (-not $health) {
 
 Write-Host "Pret : $applicationUrl" -ForegroundColor Green
 if ($EnableNetworkCollection) {
-    Write-Host 'Collecte DNS passive activee : aucun contact ne se produit sans clic et confirmation.' -ForegroundColor Yellow
+    Write-Host 'Collecte passive DNS/HTTP/TLS activee : aucun contact sans clic et confirmation.' -ForegroundColor Yellow
 }
 else {
     Write-Host 'Le mode test ne contacte aucun site cible.' -ForegroundColor Cyan
