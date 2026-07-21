@@ -88,8 +88,9 @@ if ($EnableScreenshots) {
     if ($LASTEXITCODE -ne 0) {
         throw 'Docker Desktop doit etre demarre pour activer la capture isolee.'
     }
-    & $docker.Source image inspect $captureDockerImage --format '{{.Id}}' *> $null
-    $captureImageExists = $LASTEXITCODE -eq 0
+    $captureImageIds = @(& $docker.Source image ls --quiet `
+        --filter "reference=$captureDockerImage")
+    $captureImageExists = $captureImageIds.Count -gt 0
     if ($captureImageExists -and -not $ForceCaptureImageBuild) {
         Write-Host "Image de capture existante reutilisee : $captureDockerImage" -ForegroundColor Green
     }
