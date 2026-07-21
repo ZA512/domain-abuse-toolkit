@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.0",
+  "channels": [
+    {
+      "id": "icann_lookup",
+      "name": "ICANN Lookup",
+      "category": "contact_discovery",
+      "purpose": "Identify the sponsoring registrar and its published abuse contact.",
+      "action_url": "https://lookup.icann.org/",
+      "source_url": "https://lookup.icann.org/en/faq",
+      "verified_on": "2026-07-21",
+      "status": "active",
+      "required_fields": ["Registrable domain"],
+      "notes": "Registrar Information can expose the registrar name, IANA ID, abuse email and abuse phone. Coverage varies for ccTLDs."
+    },
+    {
+      "id": "google_phishing",
+      "name": "Google Safe Browsing — phishing",
+      "category": "user_protection",
+      "purpose": "Report a page suspected of phishing or social engineering.",
+      "action_url": "https://www.google.com/safebrowsing/report_phish/",
+      "source_url": "https://safebrowsing.google.com/",
+      "verified_on": "2026-07-21",
+      "status": "active",
+      "required_fields": ["Exact suspicious URL", "Short factual comment", "CAPTCHA"],
+      "notes": "Use the exact page URL. Submission is manual and remains subject to Google's review."
+    },
+    {
+      "id": "google_malware",
+      "name": "Google Safe Browsing — malware",
+      "category": "user_protection",
+      "purpose": "Report a page suspected of distributing malware or unwanted software.",
+      "action_url": "https://www.google.com/safebrowsing/report_badware/",
+      "source_url": "https://safebrowsing.google.com/",
+      "verified_on": "2026-07-21",
+      "status": "active",
+      "required_fields": ["Exact suspicious URL", "Short factual comment", "CAPTCHA"],
+      "notes": "Choose this channel for observed malware or unwanted-software behavior, not ordinary impersonation alone."
+    },
+    {
+      "id": "microsoft_unsafe_site",
+      "name": "Microsoft Security Intelligence — unsafe site",
+      "category": "user_protection",
+      "purpose": "Submit one or more unsafe URLs for Microsoft review.",
+      "action_url": "https://www.microsoft.com/en-us/wdsi/support/report-unsafe-site",
+      "source_url": "https://www.microsoft.com/en-us/wdsi/support/report-unsafe-site",
+      "verified_on": "2026-07-21",
+      "status": "active",
+      "required_fields": ["Exact suspicious URL", "Threat classification", "Sign-in or guest choice"],
+      "notes": "Microsoft states that corporate account holders can report multiple URLs in one submission."
+    },
+    {
+      "id": "pharos_fr",
+      "name": "PHAROS — France",
+      "category": "authority_report",
+      "purpose": "Report potentially illegal internet content to French authorities.",
+      "action_url": "https://internet-signalement.gouv.fr/",
+      "source_url": "https://www.service-public.gouv.fr/particuliers/vosdroits/R17674",
+      "verified_on": "2026-07-21",
+      "status": "active",
+      "required_fields": ["Content category", "Date and time", "Exact URL", "Situation description", "Reporter details"],
+      "notes": "PHAROS is not an emergency service. The operator must decide whether the observed content falls within the official scope."
+    }
+  ]
+}

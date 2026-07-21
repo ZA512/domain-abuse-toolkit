@@ -33,6 +33,7 @@ from domain_abuse_toolkit.services.cases import (
 from domain_abuse_toolkit.services.drafts import DraftService
 from domain_abuse_toolkit.services.evidence import EvidenceStore, EvidenceStoreError
 from domain_abuse_toolkit.services.exports import EvidenceExportService
+from domain_abuse_toolkit.services.reporting import ReportingService
 
 settings = get_settings()
 package_root = Path(__file__).resolve().parent
@@ -43,6 +44,7 @@ export_service = EvidenceExportService(
     case_service.evidence_store,
     max_uncompressed_bytes=settings.max_export_bytes,
 )
+reporting_service = ReportingService()
 form_csrf_token = secrets.token_urlsafe(32)
 
 app = FastAPI(
@@ -158,6 +160,8 @@ def _case_context(
         "form_csrf_token": form_csrf_token,
         "integrity_errors": integrity_errors,
         "artifact_count": artifact_count,
+        "reporting_channels": reporting_service.channel_views(record),
+        "reporting_summaries": reporting_service.summaries(record),
         "capabilities": case_service.capabilities(settings),
         "pilot_notice": True,
     }

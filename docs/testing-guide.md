@@ -54,6 +54,9 @@ Vérifier ensuite :
 - que les boutons de copie fonctionnent ;
 - que **Open email client** ouvre un brouillon sans l’envoyer.
 - que **Download evidence ZIP** télécharge une archive contenant le manifeste et le vérificateur.
+- que les canaux officiels suggérés apparaissent avec leur date de vérification ;
+- que les résumés français et anglais sont copiables ;
+- qu’une adresse saisie dans **Email recipient** est ajoutée au brouillon ouvert dans le client mail.
 
 Après extraction complète du ZIP, ouvrir PowerShell dans le dossier du dossier exporté puis lancer :
 
@@ -71,7 +74,7 @@ La fenêtre doit terminer par :
 
 ```text
 All checks passed!
-37 passed
+41 passed
 SUCCES - tous les controles passent.
 ```
 

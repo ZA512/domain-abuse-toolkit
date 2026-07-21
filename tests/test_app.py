@@ -142,6 +142,9 @@ def test_qualification_api_requires_override_reason_and_renders_revision(
     detail = client.get(f"/cases/{created['id']}")
     assert "Human validation desk" in detail.text
     assert "Qualification confirmed · LOW" in detail.text
+    assert "Open the right official channel" in detail.text
+    assert "Google Safe Browsing" in detail.text
+    assert "data-email-draft" in detail.text
 
 
 def test_qualification_form_redirects_back_with_human_readable_error(

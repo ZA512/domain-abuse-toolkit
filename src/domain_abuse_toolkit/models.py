@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AnyHttpUrl, BaseModel, Field, field_validator
 
 
 class CaseState(StrEnum):
@@ -176,3 +176,23 @@ class CapabilityStatus(BaseModel):
     external_apis: bool
     llm: bool
     microsoft_graph: bool
+
+
+class ReportingChannel(BaseModel):
+    id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{2,63}$")
+    name: str
+    category: str
+    purpose: str
+    action_url: AnyHttpUrl
+    source_url: AnyHttpUrl
+    verified_on: date
+    status: Literal["active", "review_needed", "deprecated"]
+    required_fields: list[str]
+    notes: str
+
+    @field_validator("action_url", "source_url")
+    @classmethod
+    def validate_official_url(cls, value: AnyHttpUrl) -> AnyHttpUrl:
+        if value.scheme != "https" or value.username or value.password:
+            raise ValueError("Reporting catalogue URLs must be credential-free HTTPS URLs.")
+        return value

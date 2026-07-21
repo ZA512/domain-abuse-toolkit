@@ -102,6 +102,20 @@ summary { cursor: pointer; font-weight: 750; }
 .timeline small { display: block; margin-top: 4px; color: var(--muted); }
 .timeline-detail { display: block; margin-top: 4px; color: var(--muted); font-size: 0.86rem; }
 .empty-state { margin-bottom: 0; color: var(--muted); }
+.reporting-workspace { margin: 22px 0; }
+.report-summary-grid, .channel-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+.report-summary { display: grid; gap: 9px; }
+.report-summary .button { justify-self: start; }
+.channel-card { display: flex; flex-direction: column; gap: 10px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfb; }
+.channel-card h3, .channel-card p { margin: 0; }
+.channel-card p { color: var(--muted); font-size: 0.9rem; }
+.channel-card-heading { display: flex; flex-wrap: wrap; gap: 7px; }
+.channel-recommended { border-color: #91cbb1; background: #f5fbf8; }
+.channel-reason { padding: 9px 11px; border-radius: 8px; background: #edf0ee; color: var(--ink) !important; }
+.channel-card details { margin-top: 2px; }
+.channel-card-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: auto; padding-top: 4px; }
+.channel-card-footer small { color: var(--muted); }
+.email-recipient { margin: 4px 0 20px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--accent-soft); }
 .definition-list { display: grid; gap: 2px; margin: 0 0 18px; }
 .definition-list div { display: flex; justify-content: space-between; gap: 20px; padding: 11px 0; border-bottom: 1px solid var(--line); }
 .definition-list dt { color: var(--muted); }
@@ -118,6 +132,8 @@ code { padding: 2px 5px; border-radius: 5px; background: rgba(19, 33, 27, 0.08);
   .layout-two, .stats-grid { grid-template-columns: 1fr; }
   .grid-two { grid-template-columns: 1fr; }
   .decision-list { grid-template-columns: 1fr; }
+  .report-summary-grid, .channel-grid { grid-template-columns: 1fr; }
+  .channel-card-footer { align-items: stretch; flex-direction: column; }
   .decision-factual { grid-column: auto; }
   .qualification-footer { align-items: stretch; flex-direction: column; }
   .evidence-export { align-items: stretch; flex-direction: column; }

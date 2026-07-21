@@ -32,6 +32,7 @@ This foundation currently includes:
 - action completion, automatic workflow state and immutable local event history;
 - human qualification revisions with confirmed criticality and override rationale;
 - deterministic evidence ZIP export with an included offline SHA-256 verifier;
+- versioned official reporting-channel catalogue and bilingual form-ready summaries;
 - unit tests for the first safety-critical behaviors.
 
 Network collection, browser capture, shared database persistence, scheduling, Microsoft Graph, and optional LLM integration are represented in the design but remain feature-gated until implemented and reviewed.
@@ -97,6 +98,7 @@ Read [the security and evidence model](docs/security-and-evidence.md) before ena
 - [Security and evidence](docs/security-and-evidence.md)
 - [MVP backlog](docs/mvp-backlog.md)
 - [Local testing guide](docs/testing-guide.md)
+- [Reporting-channel catalogue](docs/reporting-catalogue.md)
 
 ## License
 

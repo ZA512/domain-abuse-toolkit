@@ -161,11 +161,64 @@
     {% endif %}
   </section>
 
+  <section class="panel reporting-workspace">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Reporting workspace</p>
+        <h2>Open the right official channel</h2>
+      </div>
+      <span class="badge badge-safe">Human submission only</span>
+    </div>
+    <p class="lead">Copy the prepared facts, then open the official form. Links are versioned and show their last verification date; no form is submitted by this application.</p>
+
+    <div class="report-summary-grid">
+      <article class="report-summary">
+        <label>English form summary<textarea id="report-summary-en" rows="11" readonly>{{ reporting_summaries.en }}</textarea></label>
+        <button class="button" type="button" data-copy="#report-summary-en">Copy English summary</button>
+      </article>
+      <article class="report-summary">
+        <label>Résumé français<textarea id="report-summary-fr" rows="11" readonly>{{ reporting_summaries.fr }}</textarea></label>
+        <button class="button" type="button" data-copy="#report-summary-fr">Copier le résumé français</button>
+      </article>
+    </div>
+
+    <div class="channel-grid">
+      {% for item in reporting_channels %}
+        <article class="channel-card{% if item.recommended %} channel-recommended{% endif %}">
+          <div class="channel-card-heading">
+            <span class="badge">{{ item.channel.category|replace('_', ' ') }}</span>
+            {% if item.recommended %}<span class="badge badge-safe">Suggested</span>{% endif %}
+          </div>
+          <h3>{{ item.channel.name }}</h3>
+          <p>{{ item.channel.purpose }}</p>
+          <p class="channel-reason">{{ item.recommendation_reason }}</p>
+          <details>
+            <summary>Required information</summary>
+            <ul class="compact-list">
+              {% for field in item.channel.required_fields %}<li>{{ field }}</li>{% endfor %}
+            </ul>
+            <p>{{ item.channel.notes }}</p>
+          </details>
+          <div class="channel-card-footer">
+            <small>Verified {{ item.channel.verified_on }} · <a href="{{ item.source_url }}" target="_blank" rel="noopener noreferrer">official source</a></small>
+            <a class="button button-primary" href="{{ item.action_url }}" target="_blank" rel="noopener noreferrer">Open official site</a>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+
   <section class="panel">
     <div class="section-heading">
       <div><p class="eyebrow">Draft workspace</p><h2>Registrar drafts</h2></div>
       <span class="badge badge-safe">Not sent</span>
     </div>
+
+    <label class="email-recipient">
+      Email recipient (optional)
+      <input id="email-recipient" type="email" maxlength="254" autocomplete="off" placeholder="abuse@registrar.example">
+      <small>Paste the official abuse email found through ICANN Lookup or the provider site. This value is used only to open your mail client and is not stored yet.</small>
+    </label>
 
     <div class="tabs" role="tablist" aria-label="Draft languages">
       {% for item in drafts %}
@@ -181,7 +234,7 @@
         <div class="button-row">
           <button class="button" type="button" data-copy="#subject-{{ item.draft.language }}">Copy subject</button>
           <button class="button" type="button" data-copy="#body-{{ item.draft.language }}">Copy body</button>
-          <a class="button button-primary" href="{{ item.mailto }}">Open email client</a>
+          <a class="button button-primary" href="{{ item.mailto }}" data-email-draft data-recipient="#email-recipient" data-subject="#subject-{{ item.draft.language }}" data-body="#body-{{ item.draft.language }}">Open addressed email</a>
         </div>
       </article>
     {% endfor %}
