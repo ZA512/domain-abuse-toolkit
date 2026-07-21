@@ -39,6 +39,55 @@ def test_original_cannot_be_overwritten(tmp_path) -> None:  # type: ignore[no-un
         store.write_original(**arguments)
 
 
+def test_derived_artifact_references_a_registered_source(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    store = EvidenceStore(tmp_path)
+    case_id = "DAT-20260101-ABCDEF12"
+    source_path = "10_snapshots/SNP-TEST/http/00-body.bin"
+    store.write_original(
+        case_id,
+        source_path,
+        b"<h1>synthetic</h1>",
+        media_type="text/html",
+        source="synthetic HTTP evidence",
+    )
+
+    record = store.write_derived(
+        case_id,
+        "10_snapshots/SNP-TEST/capture/desktop.png",
+        b"\x89PNG\r\n\x1a\nsynthetic",
+        media_type="image/png",
+        source="synthetic offline rendering",
+        derived_from=(source_path,),
+    )
+
+    assert record["classification"] == "derived"
+    assert record["derived_from"] == [source_path]
+    assert store.verify_case(case_id) == []
+    assert store.read_verified_artifact(case_id, record["path"]).startswith(b"\x89PNG")
+    with pytest.raises(EvidenceStoreError, match="not an original"):
+        store.read_verified_original(case_id, record["path"])
+
+
+def test_derived_artifact_rejects_an_unknown_source(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    store = EvidenceStore(tmp_path)
+    store.write_original(
+        "DAT-20260101-ABCDEF12",
+        "00_case/intake.json",
+        b"{}",
+        media_type="application/json",
+        source="synthetic intake",
+    )
+    with pytest.raises(EvidenceStoreError, match="not registered"):
+        store.write_derived(
+            "DAT-20260101-ABCDEF12",
+            "10_snapshots/SNP-TEST/capture/desktop.png",
+            b"image",
+            media_type="image/png",
+            source="synthetic offline rendering",
+            derived_from=("missing.html",),
+        )
+
+
 def test_concurrent_artifact_writes_keep_manifest_consistent(tmp_path) -> None:  # type: ignore[no-untyped-def]
     store = EvidenceStore(tmp_path)
     case_id = "DAT-20260101-ABCDEF12"

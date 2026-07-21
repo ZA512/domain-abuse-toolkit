@@ -418,14 +418,25 @@ class CaseService:
                 raise ValueError("Snapshot artifact references do not match captured artifacts.")
 
             for artifact in artifacts:
-                self.evidence_store.write_original(
-                    snapshot.case_id,
-                    artifact.relative_path,
-                    artifact.content,
-                    media_type=artifact.media_type,
-                    source=artifact.source,
-                    metadata=artifact.metadata,
-                )
+                if artifact.classification == "derived":
+                    self.evidence_store.write_derived(
+                        snapshot.case_id,
+                        artifact.relative_path,
+                        artifact.content,
+                        media_type=artifact.media_type,
+                        source=artifact.source,
+                        derived_from=artifact.derived_from,
+                        metadata=artifact.metadata,
+                    )
+                else:
+                    self.evidence_store.write_original(
+                        snapshot.case_id,
+                        artifact.relative_path,
+                        artifact.content,
+                        media_type=artifact.media_type,
+                        source=artifact.source,
+                        metadata=artifact.metadata,
+                    )
             payload = {
                 "schema_version": "1.0",
                 "event": snapshot.model_dump(mode="json"),

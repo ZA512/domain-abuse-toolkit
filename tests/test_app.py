@@ -1,12 +1,15 @@
 import importlib
 import io
 import re
+from datetime import UTC, datetime
 from zipfile import ZipFile
 
 import pytest
 from fastapi.testclient import TestClient
 
 from domain_abuse_toolkit.config import get_settings
+from domain_abuse_toolkit.models import CollectorResult, CollectorStatus, SnapshotEvent
+from domain_abuse_toolkit.services.evidence import PendingArtifact
 
 
 def _csrf_token(client: TestClient, path: str = "/") -> str:
@@ -64,6 +67,81 @@ def test_dns_collection_is_disabled_by_default_and_requires_opt_in(
     detail = client.get(f"/cases/{created['id']}")
     assert "Opening this case never contacts the target" in detail.text
     assert "Network collection is disabled by default" in detail.text
+
+
+def test_verified_capture_is_displayed_inline_and_tampering_is_rejected(
+    client: TestClient,
+) -> None:
+    created = client.post(
+        "/api/v1/cases",
+        json={
+            "target": "https://example.com/",
+            "brand": "Example Brand",
+            "legit_url": "https://www.example.com/",
+        },
+    ).json()
+    main_module = importlib.import_module("domain_abuse_toolkit.main")
+    now = datetime.now(UTC)
+    snapshot_id = "SNP-CAPTURE-TEST"
+    source_path = f"10_snapshots/{snapshot_id}/http/00-body.bin"
+    capture_path = f"10_snapshots/{snapshot_id}/capture/desktop.png"
+    main_module.case_service.record_snapshot(
+        SnapshotEvent(
+            id=snapshot_id,
+            case_id=created["id"],
+            status=CollectorStatus.COMPLETE,
+            started_at=now,
+            finished_at=now,
+            occurred_at=now,
+            results=[
+                CollectorResult(
+                    collector="http",
+                    version="test",
+                    status=CollectorStatus.COMPLETE,
+                    started_at=now,
+                    finished_at=now,
+                    artifacts=[source_path],
+                ),
+                CollectorResult(
+                    collector="screenshot",
+                    version="test",
+                    status=CollectorStatus.COMPLETE,
+                    started_at=now,
+                    finished_at=now,
+                    artifacts=[capture_path],
+                ),
+            ],
+        ),
+        [
+            PendingArtifact(
+                relative_path=source_path,
+                content=b"<h1>synthetic</h1>",
+                media_type="text/html",
+                source="synthetic HTTP evidence",
+            ),
+            PendingArtifact(
+                relative_path=capture_path,
+                content=b"\x89PNG\r\n\x1a\nsynthetic",
+                media_type="image/png",
+                source="synthetic offline rendering",
+                classification="derived",
+                derived_from=(source_path,),
+            ),
+        ],
+    )
+
+    route = f"/cases/{created['id']}/snapshots/{snapshot_id}/capture.png"
+    detail = client.get(f"/cases/{created['id']}")
+    capture = client.get(route)
+
+    assert route in detail.text
+    assert capture.status_code == 200
+    assert capture.headers["content-type"] == "image/png"
+    assert capture.headers["cache-control"] == "no-store"
+
+    evidence_root = main_module.case_service.evidence_store.root
+    (evidence_root / created["id"] / capture_path).write_bytes(b"tampered")
+    assert client.get(route).status_code == 409
 
 
 def test_html_forms_require_a_valid_local_csrf_token(client: TestClient) -> None:

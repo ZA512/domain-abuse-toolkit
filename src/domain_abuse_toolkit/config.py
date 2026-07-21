@@ -40,6 +40,14 @@ class Settings(BaseSettings):
         default=24 * 60 * 60, ge=300, le=7 * 24 * 60 * 60
     )
     enable_screenshots: bool = False
+    screenshot_timeout_seconds: float = Field(default=25.0, ge=5, le=60)
+    screenshot_max_input_bytes: int = Field(
+        default=256 * 1024, ge=16 * 1024, le=1024 * 1024
+    )
+    screenshot_max_output_bytes: int = Field(
+        default=10 * 1024 * 1024, ge=256 * 1024, le=25 * 1024 * 1024
+    )
+    screenshot_max_page_height: int = Field(default=6000, ge=1000, le=10000)
     enable_external_apis: bool = False
     enable_llm: bool = False
     llm_provider: str = "disabled"

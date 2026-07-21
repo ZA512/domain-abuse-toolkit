@@ -130,6 +130,9 @@ summary { cursor: pointer; font-weight: 750; }
 .dns-records div { display: grid; grid-template-columns: 62px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 8px 10px; border-radius: 8px; background: #edf0ee; }
 .dns-records span { font-weight: 800; color: var(--accent-dark); }
 .dns-records small { color: var(--muted); }
+.capture-preview { margin: 16px 0 4px; }
+.capture-preview img { display: block; width: 100%; max-height: 720px; object-fit: contain; object-position: top center; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.capture-preview figcaption { margin-top: 8px; color: var(--muted); font-size: 0.8rem; }
 .submission-recorder { margin-top: 24px; padding-top: 22px; border-top: 1px solid var(--line); }
 .submission-recorder > p { color: var(--muted); }
 .submission-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }

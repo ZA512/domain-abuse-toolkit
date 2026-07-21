@@ -63,7 +63,7 @@ The local pilot now executes bounded DNS/HTTP/TLS/RDAP jobs in a small in-proces
 
 ### Browser worker
 
-Rendered capture is separated because executing hostile JavaScript has a different risk profile from DNS or RDAP queries. The worker uses an ephemeral browser context, network egress restrictions, strict limits, and no access to the application network or evidence credentials beyond a one-job upload capability.
+The pilot’s static rendering worker is launched as an ephemeral Docker container after the bounded HTTP body has been collected. It receives no evidence-store credential or host mount, has `--network=none`, a read-only root filesystem, dropped capabilities and strict resource limits, disables JavaScript and all browser requests, and returns a single PNG over standard I/O. The PNG is recorded as a derived artifact linked to the original HTTP body. A future live capture worker would require a separately reviewed egress proxy and stronger production orchestration before it may navigate hostile sites.
 
 ### Relational database
 

@@ -44,6 +44,7 @@ def parse_manifest(content: bytes) -> dict[str, object]:
 
 def verify_records(manifest: dict[str, object], read_artifact) -> int:  # type: ignore[no-untyped-def]
     seen: set[str] = set()
+    derivations: list[tuple[str, list[str]]] = []
     total = 0
     records = manifest["artifacts"]
     assert isinstance(records, list)
@@ -58,6 +59,18 @@ def verify_records(manifest: dict[str, object], read_artifact) -> int:  # type: 
         if not isinstance(expected_size, int) or expected_size < 0:
             raise VerificationError(f"{path_value}: invalid size")
         path = str(safe_relative_path(path_value))
+        classification = record.get("classification")
+        if classification not in {"original", "derived"}:
+            raise VerificationError(f"{path}: invalid classification")
+        if classification == "derived":
+            sources = record.get("derived_from")
+            if (
+                not isinstance(sources, list)
+                or not sources
+                or any(not isinstance(source, str) for source in sources)
+            ):
+                raise VerificationError(f"{path}: invalid derivation sources")
+            derivations.append((path, sources))
         if path in seen:
             raise VerificationError(f"duplicate artifact path: {path}")
         seen.add(path)
@@ -71,6 +84,11 @@ def verify_records(manifest: dict[str, object], read_artifact) -> int:  # type: 
             raise VerificationError(f"{path}: size mismatch")
         if hashlib.sha256(content).hexdigest() != digest:
             raise VerificationError(f"{path}: SHA-256 mismatch")
+    for path, sources in derivations:
+        for source in sources:
+            normalized_source = str(safe_relative_path(source))
+            if normalized_source not in seen or normalized_source == path:
+                raise VerificationError(f"{path}: unknown derivation source")
     return len(seen)
 
 

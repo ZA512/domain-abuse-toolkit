@@ -35,9 +35,10 @@ This foundation currently includes:
 - versioned official reporting-channel catalogue and bilingual form-ready summaries;
 - operator-confirmed submission records with external references and criticality-based follow-up dates;
 - an explicit passive DNS/HTTP/TLS/RDAP job with validated-IP connections, redirect revalidation, bounded bodies, raw certificates, authoritative registration data and normalized observations;
+- a Docker-isolated offline desktop rendering of the bounded HTML evidence, with JavaScript and all container networking disabled;
 - unit tests for the first safety-critical behaviors.
 
-Passive DNS/HTTP/TLS/RDAP collection is implemented but remains disabled by default. Browser capture, shared database persistence, scheduling, Microsoft Graph, and optional LLM integration remain feature-gated until implemented and reviewed.
+Passive DNS/HTTP/TLS/RDAP collection and offline static rendering are implemented but remain disabled by default. Shared database persistence, scheduling, Microsoft Graph, and optional LLM integration remain feature-gated until implemented and reviewed.
 
 ## Quick start
 
@@ -49,7 +50,7 @@ On the current Windows/WSL development setup:
 2. Double-click `RUN_TESTS.cmd` to install development dependencies and run lint plus unit tests.
 3. Stop the application with `STOP_TOOLKIT.cmd`, `Ctrl+C` in the visible server window, or by closing that window.
 
-To test passive technical collection, stop the standard server first, then double-click `START_TOOLKIT_NETWORK.cmd` and enter `OUI`. Opening a case still performs no collection; a separate authorization checkbox and button are required on the case page.
+To test passive technical collection and offline rendering, start Docker Desktop, stop the standard server, then double-click `START_TOOLKIT_NETWORK.cmd` and enter `OUI`. The first run builds a pinned local Playwright capture image and can take several minutes. Opening a case still performs no collection; a separate authorization checkbox and button are required on the case page.
 
 The launchers keep the Python environments and private pilot cases under the WSL user profile, outside this public Git repository. See the [local testing guide](docs/testing-guide.md).
 
@@ -87,6 +88,7 @@ pytest
 - The service binds to localhost by default.
 - Network collection, screenshots, external APIs, LLMs, and Microsoft Graph are off by default.
 - The opt-in network mode performs bounded DNS, one controlled HTTP/TLS navigation, and authoritative RDAP discovery through IANA; every redirect is revalidated before connection.
+- The browser never revisits the target: it renders only the bounded stored HTML inside an ephemeral, networkless, read-only Docker container with JavaScript disabled.
 - Private, loopback, link-local, multicast, reserved, and unspecified IP targets are rejected.
 - Redirect targets must be revalidated before a collector follows them.
 - Evidence and private directories are ignored by Git.

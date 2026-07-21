@@ -49,6 +49,7 @@ from domain_abuse_toolkit.services.reporting import (
     ReportingCatalogueError,
     ReportingService,
 )
+from domain_abuse_toolkit.services.screenshot_collector import ScreenshotCollector
 from domain_abuse_toolkit.services.web_collector import (
     BoundedAddressResolver,
     WebCollector,
@@ -96,6 +97,16 @@ collection_jobs = CollectionJobService(
             bootstrap_cache_seconds=settings.rdap_bootstrap_cache_seconds,
         )
         if settings.enable_rdap_collection
+        else None
+    ),
+    (
+        ScreenshotCollector(
+            timeout_seconds=settings.screenshot_timeout_seconds,
+            max_input_bytes=settings.screenshot_max_input_bytes,
+            max_output_bytes=settings.screenshot_max_output_bytes,
+            max_page_height=settings.screenshot_max_page_height,
+        )
+        if settings.enable_screenshots
         else None
     ),
     max_pending_jobs=settings.max_pending_collection_jobs,
@@ -330,6 +341,39 @@ def case_detail(
             submission_error,
             collection_error,
         ),
+    )
+
+
+@app.get("/cases/{case_id}/snapshots/{snapshot_id}/capture.png")
+def view_snapshot_capture(case_id: str, snapshot_id: str) -> Response:
+    try:
+        record = case_service.get(case_id)
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Case not found") from exc
+    snapshot = next(
+        (item for item in record.snapshots if item.id == snapshot_id), None
+    )
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+    expected_path = f"10_snapshots/{snapshot_id}/capture/desktop.png"
+    if not any(
+        result.collector == "screenshot" and expected_path in result.artifacts
+        for result in snapshot.results
+    ):
+        raise HTTPException(status_code=404, detail="Capture not found")
+    try:
+        content = case_service.evidence_store.read_verified_artifact(
+            case_id, expected_path
+        )
+    except EvidenceStoreError as exc:
+        raise HTTPException(status_code=409, detail="Capture integrity check failed") from exc
+    return Response(
+        content=content,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": f'inline; filename="{snapshot_id}-desktop.png"',
+        },
     )
 
 

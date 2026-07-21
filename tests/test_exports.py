@@ -115,3 +115,42 @@ def test_export_refuses_tampering_and_size_limit(tmp_path) -> None:  # type: ign
     limited = EvidenceExportService(clean_store, max_uncompressed_bytes=32)
     with pytest.raises(EvidenceStoreError, match="size limit"):
         limited.build(CASE_ID)
+
+
+def test_export_includes_and_verifies_a_derived_capture(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    store = EvidenceStore(tmp_path / "case-data")
+    source_path = "10_snapshots/SNP-TEST/http/00-body.bin"
+    capture_path = "10_snapshots/SNP-TEST/capture/desktop.png"
+    store.write_original(
+        CASE_ID,
+        source_path,
+        b"<h1>synthetic</h1>",
+        media_type="text/html",
+        source="synthetic HTTP evidence",
+    )
+    store.write_derived(
+        CASE_ID,
+        capture_path,
+        b"\x89PNG\r\n\x1a\nsynthetic",
+        media_type="image/png",
+        source="synthetic offline rendering",
+        derived_from=(source_path,),
+    )
+    exported = EvidenceExportService(
+        store, max_uncompressed_bytes=1024 * 1024
+    ).build(CASE_ID)
+    archive_path = tmp_path / "derived-evidence.zip"
+    archive_path.write_bytes(exported.content)
+    with ZipFile(archive_path) as archive:
+        verifier_path = tmp_path / "verify-derived.py"
+        verifier_path.write_bytes(archive.read(f"{CASE_ID}/verify_evidence.py"))
+
+    verified = subprocess.run(
+        [sys.executable, str(verifier_path), str(archive_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert verified.returncode == 0
+    assert f"VERIFIED: {CASE_ID} (2 artifacts)" in verified.stdout

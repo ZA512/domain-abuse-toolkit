@@ -7,6 +7,8 @@ param(
 
     [switch]$EnableNetworkCollection,
 
+    [switch]$EnableScreenshots,
+
     [ValidateSet('Normal', 'Hidden')]
     [string]$ServerWindowStyle = 'Normal'
 )
@@ -72,6 +74,28 @@ if ($LASTEXITCODE -ne 0 -or -not $wslRepositoryRoot) {
 
 $repoLiteral = ConvertTo-BashLiteral -Value $wslRepositoryRoot
 $networkCollectionValue = if ($EnableNetworkCollection) { 'true' } else { 'false' }
+$screenshotValue = if ($EnableScreenshots) { 'true' } else { 'false' }
+$captureDockerCommand = ''
+if ($EnableScreenshots) {
+    $docker = Get-Command 'docker.exe' -ErrorAction SilentlyContinue
+    if (-not $docker) {
+        throw 'Docker Desktop est requis pour isoler le navigateur de capture.'
+    }
+    & $docker.Source version --format '{{.Server.Version}}' | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Docker Desktop doit etre demarre pour activer la capture isolee.'
+    }
+    Write-Host 'Preparation du conteneur de capture isole...'
+    & $docker.Source build --quiet --tag 'domain-abuse-toolkit-capture:1.0' `
+        --file (Join-Path $repositoryRoot 'docker\capture\Dockerfile') $repositoryRoot
+    if ($LASTEXITCODE -ne 0) {
+        throw 'La preparation du conteneur de capture a echoue.'
+    }
+    $captureDockerCommand = (& wsl.exe wslpath -a -u $docker.Source).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $captureDockerCommand) {
+        throw 'Impossible de localiser Docker depuis WSL.'
+    }
+}
 $setupCommand = @"
 set -eu
 REPO=$repoLiteral
@@ -100,7 +124,8 @@ export DAT_PORT=$Port
 export DAT_PUBLIC_BASE_URL="http://127.0.0.1:$Port"
 export DAT_ENABLE_NETWORK_COLLECTION=$networkCollectionValue
 export DAT_ENABLE_RDAP_COLLECTION=$networkCollectionValue
-export DAT_ENABLE_SCREENSHOTS=false
+export DAT_ENABLE_SCREENSHOTS=$screenshotValue
+export DAT_CAPTURE_DOCKER_COMMAND="$captureDockerCommand"
 mkdir -p "`$HOME/.local/share/domain-abuse-toolkit"
 echo "`$`$" > "`$HOME/.local/share/domain-abuse-toolkit/server-$Port.pid"
 exec "`$VENV/bin/python" -m uvicorn domain_abuse_toolkit.main:app --host 127.0.0.1 --port $Port
@@ -148,6 +173,9 @@ if ($EnableNetworkCollection) {
 }
 else {
     Write-Host 'Le mode test ne contacte aucun site cible.' -ForegroundColor Cyan
+}
+if ($EnableScreenshots) {
+    Write-Host 'Rendu visuel hors ligne actif : JavaScript et reseau bloques dans le navigateur.' -ForegroundColor Yellow
 }
 Write-Host 'Fermez la fenetre serveur ou utilisez Ctrl+C pour arreter.'
 

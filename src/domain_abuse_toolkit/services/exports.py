@@ -53,7 +53,7 @@ class EvidenceExportService:
             if path in seen_paths:
                 raise EvidenceStoreError("The evidence manifest contains a duplicate path.")
             seen_paths.add(path)
-            content = self.evidence_store.read_verified_original(case_id, path)
+            content = self.evidence_store.read_verified_artifact(case_id, path)
             if record.get("size") != len(content):
                 raise EvidenceStoreError(f"{path}: size mismatch")
             total_size += len(content)

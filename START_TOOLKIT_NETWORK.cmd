@@ -2,7 +2,8 @@
 setlocal
 title Domain Abuse Toolkit - Collecte technique passive
 echo.
-echo ATTENTION : ce mode autorise la collecte DNS/HTTP/TLS apres un clic confirme.
+echo ATTENTION : ce mode autorise la collecte DNS/HTTP/TLS/RDAP apres un clic confirme.
+echo Le HTML borne sera ensuite rendu hors ligne, sans JavaScript ni acces reseau.
 echo L'ouverture d'un dossier ne declenche aucune collecte.
 echo Utilisez uniquement des cibles pour lesquelles vous etes autorise.
 echo.
@@ -12,7 +13,7 @@ if /I not "%DAT_CONFIRM%"=="OUI" (
   pause
   exit /b 1
 )
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start-toolkit.ps1" -EnableNetworkCollection
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start-toolkit.ps1" -EnableNetworkCollection -EnableScreenshots
 if errorlevel 1 (
   echo.
   echo Le demarrage a echoue. Consultez le message ci-dessus.

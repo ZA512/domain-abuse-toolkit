@@ -8,7 +8,7 @@ import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Literal
 
 _CASE_ID = re.compile(r"^[A-Z0-9][A-Z0-9-]{5,63}$")
 
@@ -20,6 +20,8 @@ class PendingArtifact:
     media_type: str
     source: str
     metadata: dict[str, Any] = field(default_factory=dict)
+    classification: Literal["original", "derived"] = "original"
+    derived_from: tuple[str, ...] = ()
 
 
 class EvidenceStoreError(ValueError):
@@ -63,7 +65,65 @@ class EvidenceStore:
         source: str,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        return self._write_artifact(
+            case_id,
+            relative_path,
+            content,
+            media_type=media_type,
+            source=source,
+            metadata=metadata,
+            classification="original",
+            derived_from=(),
+        )
+
+    def write_derived(
+        self,
+        case_id: str,
+        relative_path: str,
+        content: bytes,
+        *,
+        media_type: str,
+        source: str,
+        derived_from: tuple[str, ...],
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if not derived_from:
+            raise EvidenceStoreError("Derived evidence requires at least one source artifact.")
+        return self._write_artifact(
+            case_id,
+            relative_path,
+            content,
+            media_type=media_type,
+            source=source,
+            metadata=metadata,
+            classification="derived",
+            derived_from=derived_from,
+        )
+
+    def _write_artifact(
+        self,
+        case_id: str,
+        relative_path: str,
+        content: bytes,
+        *,
+        media_type: str,
+        source: str,
+        metadata: dict[str, Any] | None,
+        classification: Literal["original", "derived"],
+        derived_from: tuple[str, ...],
+    ) -> dict[str, Any]:
         with self._lock:
+            if classification == "derived":
+                manifest = self._read_manifest(case_id)
+                registered = {
+                    item.get("path")
+                    for item in manifest.get("artifacts", [])
+                    if isinstance(item, dict)
+                }
+                if any(path not in registered for path in derived_from):
+                    raise EvidenceStoreError(
+                        "A derived evidence source is not registered in the manifest."
+                    )
             destination = self._artifact_path(case_id, relative_path)
             destination.parent.mkdir(parents=True, exist_ok=True)
             try:
@@ -76,7 +136,7 @@ class EvidenceStore:
 
             record = {
                 "path": str(PurePosixPath(relative_path)),
-                "classification": "original",
+                "classification": classification,
                 "media_type": media_type,
                 "source": source,
                 "size": len(content),
@@ -84,6 +144,8 @@ class EvidenceStore:
                 "created_at": datetime.now(UTC).isoformat(),
                 "metadata": metadata or {},
             }
+            if derived_from:
+                record["derived_from"] = list(derived_from)
             self._append_manifest(case_id, record)
             return record
 
@@ -97,6 +159,19 @@ class EvidenceStore:
 
     def read_verified_original(self, case_id: str, relative_path: str) -> bytes:
         """Read an original only when its manifest entry and SHA-256 digest are valid."""
+        content, record = self._read_verified_artifact(case_id, relative_path)
+        if record.get("classification") != "original":
+            raise EvidenceStoreError("The requested artifact is not an original.")
+        return content
+
+    def read_verified_artifact(self, case_id: str, relative_path: str) -> bytes:
+        """Read any registered original or derived artifact after digest verification."""
+        content, _record = self._read_verified_artifact(case_id, relative_path)
+        return content
+
+    def _read_verified_artifact(
+        self, case_id: str, relative_path: str
+    ) -> tuple[bytes, dict[str, Any]]:
         destination = self._artifact_path(case_id, relative_path)
         if not destination.is_file():
             raise EvidenceStoreError("The original artifact or its manifest is missing.")
@@ -108,13 +183,16 @@ class EvidenceStore:
             for item in manifest.get("artifacts", [])
             if item.get("path") == str(PurePosixPath(relative_path))
         ]
-        if len(matching) != 1 or matching[0].get("classification") != "original":
-            raise EvidenceStoreError("The original artifact is not registered correctly.")
+        if len(matching) != 1 or matching[0].get("classification") not in {
+            "original",
+            "derived",
+        }:
+            raise EvidenceStoreError("The artifact is not registered correctly.")
 
         content = destination.read_bytes()
         if hashlib.sha256(content).hexdigest() != matching[0].get("sha256"):
             raise EvidenceStoreError("The original artifact failed its integrity check.")
-        return content
+        return content, matching[0]
 
     def list_original_paths(self, case_id: str, prefix: str = "") -> list[str]:
         """List registered original paths, optionally below a safe POSIX prefix."""
@@ -186,6 +264,11 @@ class EvidenceStore:
         records = manifest.get("artifacts")
         if not isinstance(records, list):
             return ["manifest artifact list is invalid"]
+        registered_paths = {
+            record.get("path")
+            for record in records
+            if isinstance(record, dict) and isinstance(record.get("path"), str)
+        }
         seen: set[str] = set()
         for record in records:
             if not isinstance(record, dict) or not isinstance(record.get("path"), str):
@@ -210,4 +293,18 @@ class EvidenceStore:
             digest = hashlib.sha256(content).hexdigest()
             if digest != record.get("sha256"):
                 errors.append(f"{relative_path}: digest mismatch")
+            classification = record.get("classification")
+            if classification not in {"original", "derived"}:
+                errors.append(f"{relative_path}: invalid classification")
+            if classification == "derived":
+                sources = record.get("derived_from")
+                if not isinstance(sources, list) or not sources:
+                    errors.append(f"{relative_path}: missing derivation source")
+                elif any(
+                    not isinstance(source, str)
+                    or source == relative_path
+                    or source not in registered_paths
+                    for source in sources
+                ):
+                    errors.append(f"{relative_path}: unknown derivation source")
         return errors

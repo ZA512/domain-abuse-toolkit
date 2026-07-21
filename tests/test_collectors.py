@@ -183,8 +183,9 @@ class FailedDnsCollector(SuccessfulCollector):
 class SuccessfulWebCollector:
     version = "test"
 
-    def collect(self, _target, _snapshot_id: str) -> CollectorBatchOutput:  # type: ignore[no-untyped-def]
+    def collect(self, _target, snapshot_id: str) -> CollectorBatchOutput:  # type: ignore[no-untyped-def]
         now = datetime.now(UTC)
+        path = f"10_snapshots/{snapshot_id}/http/00-body.bin"
         return CollectorBatchOutput(
             results=[
                 CollectorResult(
@@ -193,6 +194,7 @@ class SuccessfulWebCollector:
                     status=CollectorStatus.COMPLETE,
                     started_at=now,
                     finished_at=now,
+                    artifacts=[path],
                 ),
                 CollectorResult(
                     collector="tls",
@@ -202,7 +204,15 @@ class SuccessfulWebCollector:
                     finished_at=now,
                 ),
             ],
-            artifacts=[],
+            artifacts=[
+                PendingArtifact(
+                    relative_path=path,
+                    content=b"<h1>synthetic</h1>",
+                    media_type="text/html",
+                    source="synthetic HTTP collector",
+                    metadata={"collector": "http", "truncated": False},
+                )
+            ],
         )
 
 
@@ -220,6 +230,34 @@ class SuccessfulRdapCollector:
                 finished_at=now,
             ),
             artifacts=[],
+        )
+
+
+class SuccessfulScreenshotCollector:
+    version = "test"
+
+    def collect(self, _target, snapshot_id: str, source_artifact) -> CollectorOutput:  # type: ignore[no-untyped-def]
+        assert source_artifact is not None
+        now = datetime.now(UTC)
+        path = f"10_snapshots/{snapshot_id}/capture/desktop.png"
+        artifact = PendingArtifact(
+            relative_path=path,
+            content=b"\x89PNG\r\n\x1a\nsynthetic",
+            media_type="image/png",
+            source="synthetic screenshot collector",
+            classification="derived",
+            derived_from=(source_artifact.relative_path,),
+        )
+        return CollectorOutput(
+            result=CollectorResult(
+                collector="screenshot",
+                version=self.version,
+                status=CollectorStatus.COMPLETE,
+                started_at=now,
+                finished_at=now,
+                artifacts=[path],
+            ),
+            artifacts=[artifact],
         )
 
 
@@ -274,7 +312,7 @@ def test_collection_queue_has_a_global_pending_limit(tmp_path) -> None:  # type:
     assert jobs.wait(first.id).status == CollectorStatus.COMPLETE
 
 
-def test_full_passive_job_combines_dns_http_tls_and_rdap_results(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_full_passive_job_combines_all_enabled_collectors(tmp_path) -> None:  # type: ignore[no-untyped-def]
     service = CaseService(EvidenceStore(tmp_path), DraftService())
     case = service.create(
         CaseCreate(
@@ -288,6 +326,7 @@ def test_full_passive_job_combines_dns_http_tls_and_rdap_results(tmp_path) -> No
         SuccessfulCollector(),
         SuccessfulWebCollector(),
         SuccessfulRdapCollector(),
+        SuccessfulScreenshotCollector(),
     )
 
     queued = jobs.start_passive(case.id)
@@ -299,7 +338,9 @@ def test_full_passive_job_combines_dns_http_tls_and_rdap_results(tmp_path) -> No
         "http",
         "tls",
         "rdap",
+        "screenshot",
     ]
+    assert service.evidence_store.verify_case(case.id) == []
 
 
 def test_rdap_still_runs_when_target_dns_safety_gate_fails(tmp_path) -> None:  # type: ignore[no-untyped-def]

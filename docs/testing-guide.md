@@ -37,14 +37,16 @@ Pour arrêter, utiliser `Ctrl+C` dans la fenêtre intitulée **Domain Abuse Tool
 
 Le lancement standard conserve tout accès réseau désactivé. Pour tester le premier collecteur :
 
-1. arrêter le serveur avec `STOP_TOOLKIT.cmd` ;
-2. double-cliquer sur `START_TOOLKIT_NETWORK.cmd` ;
-3. lire l’avertissement puis entrer `OUI` ;
-4. ouvrir un dossier synthétique autorisé ;
-5. cocher l’autorisation dans **Collection**, puis cliquer sur **Start passive evidence collection** ;
-6. rafraîchir la fiche si le job est encore `queued` ou `running`.
+1. démarrer Docker Desktop ;
+2. arrêter le serveur avec `STOP_TOOLKIT.cmd` ;
+3. double-cliquer sur `START_TOOLKIT_NETWORK.cmd` ;
+4. lire l’avertissement puis entrer `OUI` ;
+5. patienter pendant la première construction de l’image Playwright ;
+6. ouvrir un dossier synthétique autorisé ;
+7. cocher l’autorisation dans **Collection**, puis cliquer sur **Start passive evidence collection** ;
+8. rafraîchir la fiche si le job est encore `queued` ou `running`.
 
-Cette action interroge les enregistrements DNS `A`, `AAAA`, `CNAME`, `MX`, `NS` et `TXT`, effectue une navigation HTTP/TLS bornée, puis découvre le service RDAP officiel depuis le registre IANA. Le résultat RDAP fournit notamment le registrar, son contact d’abus lorsqu’il est publié, les statuts et les dates du domaine. Les connexions utilisent une adresse publique préalablement validée, conservent le nom d’hôte/SNI et revalident chaque redirection. Aucun formulaire, cookie, script ou téléchargement n’est exécuté. Utiliser exclusivement une cible autorisée ; `example.com` convient pour un essai synthétique.
+Cette action interroge les enregistrements DNS `A`, `AAAA`, `CNAME`, `MX`, `NS` et `TXT`, effectue une navigation HTTP/TLS bornée, puis découvre le service RDAP officiel depuis le registre IANA. Le résultat RDAP fournit notamment le registrar, son contact d’abus lorsqu’il est publié, les statuts et les dates du domaine. Le HTML borné est ensuite rendu hors ligne dans un conteneur jetable : réseau désactivé, JavaScript désactivé, système de fichiers en lecture seule, ressources bornées et aucun profil personnel. La capture est marquée comme dérivée du corps HTTP original. Aucun formulaire, cookie, script ou téléchargement n’est exécuté. Utiliser exclusivement une cible autorisée ; `example.com` convient pour un essai synthétique.
 
 ## Scénario de test conseillé
 
@@ -72,7 +74,7 @@ Vérifier ensuite :
 - qu’une adresse saisie dans **Email recipient** est ajoutée au brouillon ouvert dans le client mail.
 - qu’une soumission réellement effectuée peut être confirmée dans **Record a completed submission** avec sa référence externe ;
 - que le dossier passe à `waiting_external` et affiche automatiquement la prochaine échéance de relance.
-- en mode réseau volontaire, qu’un snapshot affiche les résultats DNS, HTTP, TLS et RDAP et ajoute les réponses DNS, le corps textuel borné, le certificat, le bootstrap IANA et la réponse RDAP au ZIP de preuve.
+- en mode réseau volontaire, qu’un snapshot affiche les résultats DNS, HTTP, TLS, RDAP et SCREENSHOT, montre la capture statique, et ajoute tous ces éléments au ZIP de preuve.
 
 Après extraction complète du ZIP, ouvrir PowerShell dans le dossier du dossier exporté puis lancer :
 
@@ -90,7 +92,7 @@ La fenêtre doit terminer par :
 
 ```text
 All checks passed!
-62 passed
+71 passed
 SUCCES - tous les controles passent.
 ```
 
@@ -98,4 +100,4 @@ Le nombre de tests peut augmenter au fil du développement. Après avoir créé 
 
 ## Limite de ce premier test
 
-Les captures, les envois, Microsoft Graph et l’IA restent désactivés. La collecte DNS/HTTP/TLS/RDAP peut être activée volontairement. Les réponses RDAP brutes peuvent contenir des données personnelles publiées par le registre : elles restent dans le dossier de preuve, tandis que l’écran ne normalise que les informations opérationnelles. L’enregistrement d’une soumission est une confirmation humaine locale : l’outil ne soumet aucun formulaire et n’envoie aucun message.
+Les envois, Microsoft Graph et l’IA restent désactivés. La collecte DNS/HTTP/TLS/RDAP et le rendu statique peuvent être activés volontairement. Le rendu n’est pas une capture complète d’un site dynamique : les scripts et ressources externes ne sont jamais chargés. Les réponses RDAP brutes peuvent contenir des données personnelles publiées par le registre. L’enregistrement d’une soumission est une confirmation humaine locale : l’outil ne soumet aucun formulaire et n’envoie aucun message.

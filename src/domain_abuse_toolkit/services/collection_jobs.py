@@ -34,6 +34,17 @@ class PassiveWebCollector(Protocol):
     ) -> CollectorBatchOutput: ...
 
 
+class PassiveScreenshotCollector(Protocol):
+    version: str
+
+    def collect(
+        self,
+        target: NormalizedTarget,
+        snapshot_id: str,
+        source_artifact: PendingArtifact | None,
+    ) -> CollectorOutput: ...
+
+
 class CollectionAlreadyRunningError(ValueError):
     pass
 
@@ -62,6 +73,7 @@ class CollectionJobService:
         dns_collector: PassiveCollector,
         web_collector: PassiveWebCollector | None = None,
         rdap_collector: PassiveCollector | None = None,
+        screenshot_collector: PassiveScreenshotCollector | None = None,
         *,
         max_workers: int = 2,
         max_pending_jobs: int = 10,
@@ -70,6 +82,7 @@ class CollectionJobService:
         self.dns_collector = dns_collector
         self.web_collector = web_collector
         self.rdap_collector = rdap_collector
+        self.screenshot_collector = screenshot_collector
         self._executor = ThreadPoolExecutor(
             max_workers=max_workers, thread_name_prefix="dat-collector"
         )
@@ -214,6 +227,34 @@ class CollectionJobService:
                 )
             results.append(rdap_output.result)
             artifacts.extend(rdap_output.artifacts)
+
+        if self.screenshot_collector is not None:
+            source_artifact = next(
+                (
+                    artifact
+                    for artifact in reversed(artifacts)
+                    if artifact.metadata.get("collector") == "http"
+                    and artifact.media_type in {"text/html", "application/xhtml+xml"}
+                    and not artifact.metadata.get("truncated")
+                ),
+                None,
+            )
+            try:
+                screenshot_output = self.screenshot_collector.collect(
+                    target, job.snapshot_id, source_artifact
+                )
+            except Exception:  # isolated worker boundary hides hostile document details
+                screenshot_output = CollectorOutput(
+                    result=self._failed_result(
+                        "screenshot",
+                        self.screenshot_collector.version,
+                        job.started_at,
+                        "The isolated screenshot collector stopped unexpectedly.",
+                    ),
+                    artifacts=[],
+                )
+            results.append(screenshot_output.result)
+            artifacts.extend(screenshot_output.artifacts)
         self._persist(job_id, results, artifacts)
 
     def _persist(

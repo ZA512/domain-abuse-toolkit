@@ -50,7 +50,11 @@ Only operational registration fields are normalized for the interface: domain id
 
 ## Browser isolation
 
-The browser worker must not run inside the web application process. It requires:
+The implemented pilot capture does not revisit the target. It sends only the already bounded HTML evidence to a pinned local Playwright image running in an ephemeral Docker container. The container has no network interface, a read-only root filesystem, a bounded temporary filesystem, dropped Linux capabilities, `no-new-privileges`, and explicit CPU, memory, process, file, screenshot-dimension, output-size, and wall-clock limits. Chromium uses a clean context with JavaScript, service workers, downloads, permissions, and every browser request disabled. The container returns one PNG and is removed after the job.
+
+This PNG is a derived offline rendering linked to its original HTTP-body artifact. It can establish how the bounded static HTML rendered under the recorded policy, but it is not represented as a live full-fidelity screenshot. External styles, images, fonts, frames, and dynamic application content are intentionally absent.
+
+A future live browser worker must not run inside the web application process. It requires:
 
 - ephemeral container and browser profile;
 - read-only base image;
