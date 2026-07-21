@@ -20,7 +20,9 @@ from domain_abuse_toolkit.models import (
     CaseCreate,
     Criticality,
     Draft,
+    QualificationEvent,
     QualificationSubmission,
+    SubmissionCreate,
     Urgency,
 )
 from domain_abuse_toolkit.security.targets import TargetValidationError, normalize_target
@@ -29,11 +31,15 @@ from domain_abuse_toolkit.services.cases import (
     CaseNotFoundError,
     CaseService,
     QualificationValidationError,
+    SubmissionValidationError,
 )
 from domain_abuse_toolkit.services.drafts import DraftService
 from domain_abuse_toolkit.services.evidence import EvidenceStore, EvidenceStoreError
 from domain_abuse_toolkit.services.exports import EvidenceExportService
-from domain_abuse_toolkit.services.reporting import ReportingService
+from domain_abuse_toolkit.services.reporting import (
+    ReportingCatalogueError,
+    ReportingService,
+)
 
 settings = get_settings()
 package_root = Path(__file__).resolve().parent
@@ -111,7 +117,10 @@ def _verify_form_csrf(token: str) -> None:
 
 
 def _case_context(
-    request: Request, case_id: str, qualification_error: str | None = None
+    request: Request,
+    case_id: str,
+    qualification_error: str | None = None,
+    submission_error: str | None = None,
 ) -> dict[str, object]:
     try:
         record = case_service.get(case_id)
@@ -140,8 +149,10 @@ def _case_context(
                     "action_title": action_titles.get(event.action_code, event.action_code),
                 }
             )
-        else:
+        elif isinstance(event, QualificationEvent):
             history.append({"kind": "qualification", "event": event})
+        else:
+            history.append({"kind": "submission", "event": event})
     integrity_errors = case_service.evidence_store.verify_case(case_id)
     try:
         artifact_count = len(case_service.evidence_store.list_original_paths(case_id))
@@ -157,11 +168,14 @@ def _case_context(
         "history": history,
         "criticalities": list(Criticality),
         "qualification_error": qualification_error,
+        "submission_error": submission_error,
         "form_csrf_token": form_csrf_token,
         "integrity_errors": integrity_errors,
         "artifact_count": artifact_count,
         "reporting_channels": reporting_service.channel_views(record),
         "reporting_summaries": reporting_service.summaries(record),
+        "submission_options": reporting_service.submission_options(),
+        "latest_submission": record.submissions[-1] if record.submissions else None,
         "capabilities": case_service.capabilities(settings),
         "pilot_notice": True,
     }
@@ -245,12 +259,15 @@ def create_case_form(
 
 @app.get("/cases/{case_id}", response_class=HTMLResponse)
 def case_detail(
-    request: Request, case_id: str, qualification_error: str | None = None
+    request: Request,
+    case_id: str,
+    qualification_error: str | None = None,
+    submission_error: str | None = None,
 ):  # type: ignore[no-untyped-def]
     return templates.TemplateResponse(
         request=request,
         name="case.html",
-        context=_case_context(request, case_id, qualification_error),
+        context=_case_context(request, case_id, qualification_error, submission_error),
     )
 
 
@@ -320,6 +337,47 @@ def submit_qualification_form(
             status_code=303,
         )
     return RedirectResponse(url=f"/cases/{case_id}#qualification", status_code=303)
+
+
+@app.post("/cases/{case_id}/submissions")
+def record_submission_form(
+    case_id: str,
+    channel_id: Annotated[str, Form(max_length=64)],
+    destination: Annotated[str | None, Form(max_length=254)] = None,
+    external_reference: Annotated[str | None, Form(max_length=200)] = None,
+    notes: Annotated[str | None, Form(max_length=1000)] = None,
+    confirmed_submitted: Annotated[bool, Form()] = False,
+    csrf_token: Annotated[str, Form(alias="_csrf_token")] = "",
+):  # type: ignore[no-untyped-def]
+    _verify_form_csrf(csrf_token)
+    try:
+        submission = SubmissionCreate(
+            channel_id=channel_id,
+            destination=destination,
+            external_reference=external_reference,
+            notes=notes,
+            confirmed_submitted=confirmed_submitted,
+        )
+        channel = reporting_service.resolve_submission_channel(channel_id)
+        case_service.record_submission(
+            case_id,
+            submission,
+            channel_name=channel["name"],
+            channel_category=channel["category"],
+        )
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Case not found") from exc
+    except (ValidationError, ReportingCatalogueError, SubmissionValidationError) as exc:
+        if isinstance(exc, ValidationError):
+            message = str(exc.errors(include_url=False)[0]["msg"])
+        else:
+            message = str(exc)
+        encoded_error = quote(message, safe="")
+        return RedirectResponse(
+            url=f"/cases/{case_id}?submission_error={encoded_error}#record-submission",
+            status_code=303,
+        )
+    return RedirectResponse(url=f"/cases/{case_id}#record-submission", status_code=303)
 
 
 @app.post("/cases/{case_id}/actions/{action_code}")
@@ -404,5 +462,24 @@ def submit_qualification_api(
     except CaseNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Case not found") from exc
     except QualificationValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return record.model_dump(mode="json")
+
+
+@app.post("/api/v1/cases/{case_id}/submissions", status_code=201)
+def record_submission_api(
+    case_id: str, submission: SubmissionCreate
+) -> dict[str, object]:
+    try:
+        channel = reporting_service.resolve_submission_channel(submission.channel_id)
+        record = case_service.record_submission(
+            case_id,
+            submission,
+            channel_name=channel["name"],
+            channel_category=channel["category"],
+        )
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Case not found") from exc
+    except (ReportingCatalogueError, SubmissionValidationError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return record.model_dump(mode="json")

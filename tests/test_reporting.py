@@ -1,8 +1,10 @@
+import pytest
+
 from domain_abuse_toolkit.models import CaseCreate, QualificationSubmission
 from domain_abuse_toolkit.services.cases import CaseService
 from domain_abuse_toolkit.services.drafts import DraftService
 from domain_abuse_toolkit.services.evidence import EvidenceStore
-from domain_abuse_toolkit.services.reporting import ReportingService
+from domain_abuse_toolkit.services.reporting import ReportingCatalogueError, ReportingService
 
 
 def _qualified_case(tmp_path):  # type: ignore[no-untyped-def]
@@ -80,3 +82,13 @@ def test_stale_channel_is_never_suggested(tmp_path) -> None:  # type: ignore[no-
 
     assert icann["recommended"] is False
     assert "reverified" in str(icann["recommendation_reason"])
+
+
+def test_only_real_reporting_channels_can_be_recorded() -> None:
+    service = ReportingService()
+
+    registrar = service.resolve_submission_channel("registrar_email")
+    assert registrar["category"] == "registrar_report"
+    assert all(option["category"] != "contact_discovery" for option in service.submission_options())
+    with pytest.raises(ReportingCatalogueError, match="Unknown or unavailable"):
+        service.resolve_submission_channel("icann_lookup")

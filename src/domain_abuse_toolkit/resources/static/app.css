@@ -116,6 +116,16 @@ summary { cursor: pointer; font-weight: 750; }
 .channel-card-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: auto; padding-top: 4px; }
 .channel-card-footer small { color: var(--muted); }
 .email-recipient { margin: 4px 0 20px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--accent-soft); }
+.submission-recorder { margin-top: 24px; padding-top: 22px; border-top: 1px solid var(--line); }
+.submission-recorder > p { color: var(--muted); }
+.submission-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+.submission-notes { grid-column: 1 / -1; }
+.confirmation-check { display: flex; flex-direction: row; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--accent-soft); }
+.confirmation-check input { width: auto; margin: 0; }
+.submission-list { display: grid; gap: 9px; margin-top: 20px; }
+.submission-list article { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfb; }
+.submission-list article div { display: grid; gap: 4px; }
+.submission-list small { color: var(--muted); }
 .definition-list { display: grid; gap: 2px; margin: 0 0 18px; }
 .definition-list div { display: flex; justify-content: space-between; gap: 20px; padding: 11px 0; border-bottom: 1px solid var(--line); }
 .definition-list dt { color: var(--muted); }
@@ -133,6 +143,8 @@ code { padding: 2px 5px; border-radius: 5px; background: rgba(19, 33, 27, 0.08);
   .grid-two { grid-template-columns: 1fr; }
   .decision-list { grid-template-columns: 1fr; }
   .report-summary-grid, .channel-grid { grid-template-columns: 1fr; }
+  .submission-form, .submission-list article { grid-template-columns: 1fr; }
+  .submission-notes { grid-column: auto; }
   .channel-card-footer { align-items: stretch; flex-direction: column; }
   .decision-factual { grid-column: auto; }
   .qualification-footer { align-items: stretch; flex-direction: column; }

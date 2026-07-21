@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import threading
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from pydantic import ValidationError
 
@@ -17,6 +17,8 @@ from domain_abuse_toolkit.models import (
     Criticality,
     QualificationEvent,
     QualificationSubmission,
+    SubmissionCreate,
+    SubmissionEvent,
     SuggestedAction,
     Urgency,
 )
@@ -37,6 +39,10 @@ class QualificationValidationError(ValueError):
     pass
 
 
+class SubmissionValidationError(ValueError):
+    pass
+
+
 class CaseService:
     """Local case service backed by integrity-checked records in the evidence store."""
 
@@ -44,7 +50,9 @@ class CaseService:
         self.evidence_store = evidence_store
         self.drafts = drafts
         self._cases: dict[str, CaseRecord] = {}
-        self._events: dict[str, list[ActionEvent | QualificationEvent]] = {}
+        self._events: dict[
+            str, list[ActionEvent | QualificationEvent | SubmissionEvent]
+        ] = {}
         self._lock = threading.Lock()
         self.load_warnings: list[str] = []
         self._load_existing_cases()
@@ -69,7 +77,7 @@ class CaseService:
             ) as exc:
                 self.load_warnings.append(f"{case_id}: {exc}")
                 continue
-            events: list[ActionEvent | QualificationEvent] = []
+            events: list[ActionEvent | QualificationEvent | SubmissionEvent] = []
             try:
                 event_paths = self.evidence_store.list_original_paths(
                     case_id, "00_case/events"
@@ -93,14 +101,18 @@ class CaseService:
                         )
                     elif raw_event.get("event_type") == "qualification_recorded":
                         event = QualificationEvent.model_validate(raw_event)
+                    elif raw_event.get("event_type") == "report_submission_recorded":
+                        event = SubmissionEvent.model_validate(raw_event)
                     else:
                         raise ValueError("unknown event type")
                     if event.case_id != case_id:
                         raise ValueError("event case identifier mismatch")
                     if isinstance(event, ActionEvent):
                         self._apply_action_event(record, event)
-                    else:
+                    elif isinstance(event, QualificationEvent):
                         self._apply_qualification_event(record, event)
+                    else:
+                        self._apply_submission_event(record, event)
                 except (
                     EvidenceStoreError,
                     UnicodeDecodeError,
@@ -228,6 +240,9 @@ class CaseService:
 
     @staticmethod
     def _refresh_state(record: CaseRecord) -> None:
+        if record.submissions:
+            record.state = CaseState.WAITING_EXTERNAL
+            return
         required_codes = {
             "validate-evidence",
             "prepare-user-protection",
@@ -288,6 +303,85 @@ class CaseService:
             self._events.setdefault(case_id, []).append(event)
             return record
 
+    @staticmethod
+    def _apply_submission_event(record: CaseRecord, event: SubmissionEvent) -> None:
+        if not any(existing.id == event.id for existing in record.submissions):
+            record.submissions.append(event)
+        action_code = None
+        if event.channel_category in {"user_protection", "authority_report"}:
+            action_code = "prepare-user-protection"
+        elif event.channel_category == "registrar_report":
+            action_code = "prepare-registrar"
+        if action_code:
+            action = next(
+                (item for item in record.actions if item.code == action_code), None
+            )
+            if action is not None:
+                action.completed_at = event.occurred_at
+        record.updated_at = max(record.updated_at, event.occurred_at)
+        CaseService._refresh_state(record)
+
+    def record_submission(
+        self,
+        case_id: str,
+        submission: SubmissionCreate,
+        *,
+        channel_name: str,
+        channel_category: str,
+    ) -> CaseRecord:
+        if not submission.confirmed_submitted:
+            raise SubmissionValidationError(
+                "Confirm that the report was actually submitted before recording it."
+            )
+        if channel_category == "contact_discovery":
+            raise SubmissionValidationError(
+                "Contact discovery is not an external report submission."
+            )
+
+        with self._lock:
+            try:
+                record = self._cases[case_id]
+            except KeyError as exc:
+                raise CaseNotFoundError(case_id) from exc
+            now = datetime.now(UTC)
+            criticality = record.criticality_confirmed or record.criticality_proposed
+            follow_up_hours = {
+                Criticality.CRITICAL: 24,
+                Criticality.HIGH: 72,
+                Criticality.CAMPAIGN: 72,
+                Criticality.LOW: 168,
+            }[criticality]
+            event = SubmissionEvent(
+                id=f"EVT-{uuid.uuid4().hex.upper()}",
+                case_id=case_id,
+                channel_id=submission.channel_id,
+                channel_name=channel_name,
+                channel_category=channel_category,
+                destination=submission.destination,
+                external_reference=submission.external_reference,
+                notes=submission.notes,
+                occurred_at=now,
+                follow_up_due_at=now + timedelta(hours=follow_up_hours),
+            )
+            payload = {
+                "schema_version": "1.0",
+                "event": event.model_dump(mode="json"),
+                "notice": "Immutable operator-confirmed external submission event.",
+            }
+            event_path = (
+                f"00_case/events/{now:%Y%m%dT%H%M%S.%fZ}-{event.id}.json"
+            )
+            self.evidence_store.write_original(
+                case_id,
+                event_path,
+                (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode(),
+                media_type="application/json",
+                source="operator-confirmed external submission",
+            )
+            self._apply_submission_event(record, event)
+            self._events.setdefault(case_id, []).append(event)
+            return record
+
     def submit_qualification(
         self, case_id: str, submission: QualificationSubmission
     ) -> CaseRecord:
@@ -335,7 +429,9 @@ class CaseService:
             self._events.setdefault(case_id, []).append(event)
             return record
 
-    def history(self, case_id: str) -> list[ActionEvent | QualificationEvent]:
+    def history(
+        self, case_id: str
+    ) -> list[ActionEvent | QualificationEvent | SubmissionEvent]:
         if case_id not in self._cases:
             raise CaseNotFoundError(case_id)
         return list(reversed(self._events.get(case_id, [])))

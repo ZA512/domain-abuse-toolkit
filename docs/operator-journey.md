@@ -104,6 +104,8 @@ After the operator completes the external action, the application asks for:
 
 Recording completion schedules the next action according to the active workflow rule.
 
+The local pilot implements the channel, destination, reference, notes, immutable event, and follow-up date. Proof attachments and operator identity are reserved for the authenticated shared deployment.
+
 ## Screen 7 — Follow-up review
 
 At the due date, the application launches or offers a new snapshot. The page leads with changes:
@@ -127,4 +129,3 @@ The campaign view presents:
 - campaign-level draft and export.
 
 Correlation suggestions never merge cases automatically.
-

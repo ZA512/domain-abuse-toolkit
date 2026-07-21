@@ -33,6 +33,7 @@ This foundation currently includes:
 - human qualification revisions with confirmed criticality and override rationale;
 - deterministic evidence ZIP export with an included offline SHA-256 verifier;
 - versioned official reporting-channel catalogue and bilingual form-ready summaries;
+- operator-confirmed submission records with external references and criticality-based follow-up dates;
 - unit tests for the first safety-critical behaviors.
 
 Network collection, browser capture, shared database persistence, scheduling, Microsoft Graph, and optional LLM integration are represented in the design but remain feature-gated until implemented and reviewed.

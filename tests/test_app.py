@@ -174,6 +174,72 @@ def test_qualification_form_redirects_back_with_human_readable_error(
     assert response.headers["location"].endswith("#qualification")
 
 
+def test_submission_api_requires_confirmation_and_renders_follow_up(
+    client: TestClient,
+) -> None:
+    created = client.post(
+        "/api/v1/cases",
+        json={
+            "target": "https://login.example.net/",
+            "brand": "Example Brand",
+            "legit_url": "https://www.example.com/",
+            "suspicion_type": "phishing and credential collection",
+        },
+    ).json()
+    endpoint = f"/api/v1/cases/{created['id']}/submissions"
+    payload = {
+        "channel_id": "google_phishing",
+        "destination": "Google Safe Browsing form",
+        "external_reference": "TEST-123",
+        "confirmed_submitted": False,
+    }
+
+    rejected = client.post(endpoint, json=payload)
+    assert rejected.status_code == 422
+    assert "Confirm" in rejected.json()["detail"]
+
+    payload["confirmed_submitted"] = True
+    recorded = client.post(endpoint, json=payload)
+    assert recorded.status_code == 201
+    assert recorded.json()["state"] == "waiting_external"
+    assert recorded.json()["submissions"][0]["external_reference"] == "TEST-123"
+
+    detail = client.get(f"/cases/{created['id']}")
+    assert detail.status_code == 200
+    assert "Record a completed submission" in detail.text
+    assert "External submission recorded" in detail.text
+    assert "TEST-123" in detail.text
+
+
+def test_submission_form_uses_csrf_and_redirects_to_record(client: TestClient) -> None:
+    created = client.post(
+        "/api/v1/cases",
+        json={
+            "target": "https://shop.example.net/",
+            "brand": "Example Brand",
+            "legit_url": "https://www.example.com/",
+        },
+    ).json()
+    case_path = f"/cases/{created['id']}"
+    form_path = f"{case_path}/submissions"
+    payload = {
+        "channel_id": "registrar_email",
+        "destination": "abuse@registrar.example",
+        "external_reference": "REG-456",
+        "confirmed_submitted": "true",
+    }
+
+    assert client.post(form_path, data=payload).status_code == 403
+    payload["_csrf_token"] = _csrf_token(client, case_path)
+    recorded = client.post(form_path, data=payload, follow_redirects=False)
+
+    assert recorded.status_code == 303
+    assert recorded.headers["location"].endswith("#record-submission")
+    detail = client.get(case_path)
+    assert "REG-456" in detail.text
+    assert "Registrar abuse email" in detail.text
+
+
 def test_evidence_archive_download_has_manifest_and_integrity_headers(
     client: TestClient,
 ) -> None:

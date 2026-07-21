@@ -147,9 +147,12 @@
             <div>
               {% if item.kind == "action" %}
                 <strong>{{ "Completed" if item.event.completed else "Reopened" }} · {{ item.action_title }}</strong>
-              {% else %}
+              {% elif item.kind == "qualification" %}
                 <strong>Qualification confirmed · {{ item.event.confirmed_criticality|upper }}</strong>
                 <span class="timeline-detail">Reviewed by {{ item.event.reviewer }}{% if item.event.override_reason %} · Override: {{ item.event.override_reason }}{% endif %}</span>
+              {% else %}
+                <strong>External submission recorded · {{ item.event.channel_name }}</strong>
+                <span class="timeline-detail">{% if item.event.external_reference %}Reference {{ item.event.external_reference }} · {% endif %}Follow-up due {{ item.event.follow_up_due_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
               {% endif %}
               <small>{{ item.event.occurred_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC · {{ item.event.id }}</small>
             </div>
@@ -205,6 +208,58 @@
           </div>
         </article>
       {% endfor %}
+    </div>
+
+    <div id="record-submission" class="submission-recorder">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Follow-up cadence</p>
+          <h2>Record a completed submission</h2>
+        </div>
+        {% if latest_submission %}
+          <span class="badge">Next follow-up {{ latest_submission.follow_up_due_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
+        {% else %}
+          <span class="badge">Waiting for confirmation</span>
+        {% endif %}
+      </div>
+      <p>Use this only after the official form or email has actually been sent. The toolkit stores an integrity-checked event and moves the case to <code>waiting_external</code>.</p>
+      {% if submission_error %}<p class="alert alert-error">{{ submission_error }}</p>{% endif %}
+      <form class="submission-form" method="post" action="/cases/{{ case.id }}/submissions">
+        <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
+        <label>Channel
+          <select name="channel_id" required>
+            <option value="">Choose the completed channel</option>
+            {% for channel in submission_options %}
+              <option value="{{ channel.id }}">{{ channel.name }} · {{ channel.category|replace('_', ' ') }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Destination used
+          <input name="destination" maxlength="254" placeholder="Official form URL or abuse email">
+        </label>
+        <label>External reference
+          <input name="external_reference" maxlength="200" placeholder="Ticket, acknowledgement or message ID">
+        </label>
+        <label class="submission-notes">Notes
+          <textarea name="notes" rows="3" maxlength="1000" placeholder="Useful factual follow-up details"></textarea>
+        </label>
+        <label class="confirmation-check submission-notes">
+          <input type="checkbox" name="confirmed_submitted" value="true" required>
+          <span>I confirm this submission was actually sent outside the toolkit.</span>
+        </label>
+        <div class="submission-notes"><button class="button button-primary" type="submit">Record submission and schedule follow-up</button></div>
+      </form>
+
+      {% if case.submissions %}
+        <div class="submission-list">
+          {% for submission in case.submissions|reverse %}
+            <article>
+              <div><strong>{{ submission.channel_name }}</strong><small>Sent {{ submission.occurred_at.strftime('%Y-%m-%d %H:%M') }} UTC</small></div>
+              <div>{% if submission.external_reference %}<strong>{{ submission.external_reference }}</strong>{% else %}<span>No external reference</span>{% endif %}<small>Follow-up {{ submission.follow_up_due_at.strftime('%Y-%m-%d %H:%M') }} UTC</small></div>
+            </article>
+          {% endfor %}
+        </div>
+      {% endif %}
     </div>
   </section>
 

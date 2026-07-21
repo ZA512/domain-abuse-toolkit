@@ -66,6 +66,10 @@ An immutable generated revision containing destination, subject, body, language,
 
 A party represents an organization or internal team. A reporting channel represents a versioned URL, email, or procedure for a particular abuse and scope combination.
 
+### Submission event
+
+An immutable operator confirmation that an external report was sent. It records the selected channel, destination, external reference, factual notes, occurrence time, and calculated follow-up date. It never implies that the toolkit sent or that the recipient accepted the report.
+
 ### Campaign
 
 A confirmed grouping of cases with name, owner, state, criticality, and notes. Proposed correlations are stored separately until accepted.
@@ -90,6 +94,7 @@ Brand profile 1---* Case *---0..1 Campaign
                        +---* Action ---0..1 Draft
                        |       |
                        |       +---0..1 proof Artifact
+                       +---* Submission event
                        +---* Audit event
 
 Party 1---* Reporting channel

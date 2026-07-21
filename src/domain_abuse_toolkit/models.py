@@ -138,6 +138,49 @@ class QualificationEvent(QualificationSubmission):
     occurred_at: datetime
 
 
+class SubmissionCreate(BaseModel):
+    channel_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{2,63}$")
+    destination: str | None = Field(default=None, max_length=254)
+    external_reference: str | None = Field(default=None, max_length=200)
+    notes: str | None = Field(default=None, max_length=1000)
+    confirmed_submitted: bool = False
+
+    @field_validator("destination", "external_reference")
+    @classmethod
+    def validate_single_line(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        if any(ord(character) < 32 or ord(character) == 127 for character in normalized):
+            raise ValueError("Submission fields must not contain control characters.")
+        return normalized
+
+    @field_validator("notes")
+    @classmethod
+    def validate_submission_notes(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if any(ord(character) < 32 and character not in "\r\n\t" for character in value):
+            raise ValueError("Submission notes contain a prohibited control character.")
+        return value.strip() or None
+
+
+class SubmissionEvent(BaseModel):
+    id: str
+    case_id: str
+    event_type: Literal["report_submission_recorded"] = "report_submission_recorded"
+    channel_id: str
+    channel_name: str
+    channel_category: str
+    destination: str | None = None
+    external_reference: str | None = None
+    notes: str | None = None
+    occurred_at: datetime
+    follow_up_due_at: datetime
+
+
 class Draft(BaseModel):
     language: str
     destination_role: str
@@ -160,6 +203,7 @@ class CaseRecord(BaseModel):
     criticality_proposed: Criticality
     criticality_confirmed: Criticality | None = None
     qualification: QualificationEvent | None = None
+    submissions: list[SubmissionEvent] = Field(default_factory=list)
     actions: list[SuggestedAction]
     drafts: list[Draft]
     created_at: datetime

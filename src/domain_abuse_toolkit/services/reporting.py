@@ -31,6 +31,42 @@ class ReportingService:
             raise ReportingCatalogueError("The reporting catalogue has duplicate identifiers.")
         self.channels = channels
 
+    def resolve_submission_channel(self, channel_id: str) -> dict[str, str]:
+        if channel_id == "registrar_email":
+            return {
+                "id": "registrar_email",
+                "name": "Registrar abuse email",
+                "category": "registrar_report",
+            }
+        channel = next(
+            (
+                item
+                for item in self.channels
+                if item.id == channel_id
+                and item.status == "active"
+                and item.category != "contact_discovery"
+            ),
+            None,
+        )
+        if channel is None:
+            raise ReportingCatalogueError("Unknown or unavailable reporting channel.")
+        return {"id": channel.id, "name": channel.name, "category": channel.category}
+
+    def submission_options(self) -> list[dict[str, str]]:
+        options = [
+            {
+                "id": "registrar_email",
+                "name": "Registrar abuse email",
+                "category": "registrar_report",
+            },
+        ]
+        options.extend(
+            {"id": channel.id, "name": channel.name, "category": channel.category}
+            for channel in self.channels
+            if channel.status == "active" and channel.category != "contact_discovery"
+        )
+        return options
+
     @staticmethod
     def _recommendation(channel: ReportingChannel, case: CaseRecord) -> tuple[bool, str]:
         suspicion = case.suspicion_type.casefold()

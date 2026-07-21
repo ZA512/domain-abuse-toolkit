@@ -57,6 +57,8 @@ Vérifier ensuite :
 - que les canaux officiels suggérés apparaissent avec leur date de vérification ;
 - que les résumés français et anglais sont copiables ;
 - qu’une adresse saisie dans **Email recipient** est ajoutée au brouillon ouvert dans le client mail.
+- qu’une soumission réellement effectuée peut être confirmée dans **Record a completed submission** avec sa référence externe ;
+- que le dossier passe à `waiting_external` et affiche automatiquement la prochaine échéance de relance.
 
 Après extraction complète du ZIP, ouvrir PowerShell dans le dossier du dossier exporté puis lancer :
 
@@ -74,12 +76,12 @@ La fenêtre doit terminer par :
 
 ```text
 All checks passed!
-41 passed
+45 passed
 SUCCES - tous les controles passent.
 ```
 
-Le nombre de tests peut augmenter au fil du développement. Après avoir créé un dossier, enregistrer la qualification, marquer une action comme terminée puis arrêter et relancer l’application permet également de vérifier que le dossier, sa criticité confirmée, son état et son historique réapparaissent dans le suivi local.
+Le nombre de tests peut augmenter au fil du développement. Après avoir créé un dossier, enregistrer la qualification puis une soumission synthétique, arrêter et relancer l’application permet également de vérifier que le dossier, sa criticité confirmée, son état `waiting_external`, sa référence et son échéance de relance réapparaissent dans le suivi local.
 
 ## Limite de ce premier test
 
-La collecte réseau, les captures, les envois, Microsoft Graph et l’IA restent désactivés. Ce test porte sur l’expérience de création de dossier, la préparation du workflow, l’intégrité du stockage local et les brouillons.
+La collecte réseau, les captures, les envois, Microsoft Graph et l’IA restent désactivés. L’enregistrement d’une soumission est une confirmation humaine locale : l’outil ne soumet aucun formulaire et n’envoie aucun message. Ce test porte sur l’expérience de création de dossier, la préparation du workflow, l’intégrité du stockage local, les brouillons et le cadencement de la première relance.

@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 import pytest
 from pydantic import ValidationError
 
@@ -6,9 +8,14 @@ from domain_abuse_toolkit.models import (
     CaseState,
     Criticality,
     QualificationSubmission,
+    SubmissionCreate,
     Urgency,
 )
-from domain_abuse_toolkit.services.cases import CaseService, QualificationValidationError
+from domain_abuse_toolkit.services.cases import (
+    CaseService,
+    QualificationValidationError,
+    SubmissionValidationError,
+)
 from domain_abuse_toolkit.services.drafts import DraftService
 from domain_abuse_toolkit.services.evidence import EvidenceStore
 
@@ -144,3 +151,54 @@ def test_criticality_override_requires_reason_and_revisions_are_audited(
     assert case.qualification is not None
     assert case.qualification.override_reason is None
     assert len(service.history(case.id)) == 2
+
+
+def test_submission_schedules_follow_up_and_survives_restart(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    service = CaseService(EvidenceStore(tmp_path), DraftService())
+    case = service.create(
+        CaseCreate(
+            target="https://login.example.net/account",
+            brand="Example Brand",
+            legit_url="https://www.example.com/",
+            suspicion_type="phishing and credential collection",
+        )
+    )
+    submission = SubmissionCreate(
+        channel_id="google_phishing",
+        destination="https://safebrowsing.google.com/safebrowsing/report_phish/",
+        external_reference="TEST-123",
+        confirmed_submitted=True,
+    )
+
+    with pytest.raises(SubmissionValidationError, match="Confirm"):
+        service.record_submission(
+            case.id,
+            submission.model_copy(update={"confirmed_submitted": False}),
+            channel_name="Google Safe Browsing phishing report",
+            channel_category="user_protection",
+        )
+
+    service.record_submission(
+        case.id,
+        submission,
+        channel_name="Google Safe Browsing phishing report",
+        channel_category="user_protection",
+    )
+
+    assert case.state == CaseState.WAITING_EXTERNAL
+    assert len(case.submissions) == 1
+    assert (
+        case.submissions[0].follow_up_due_at - case.submissions[0].occurred_at
+        == timedelta(hours=24)
+    )
+    protection_action = next(
+        action for action in case.actions if action.code == "prepare-user-protection"
+    )
+    assert protection_action.completed_at == case.submissions[0].occurred_at
+
+    restarted = CaseService(EvidenceStore(tmp_path), DraftService())
+    restored = restarted.get(case.id)
+    assert restored.state == CaseState.WAITING_EXTERNAL
+    assert restored.submissions[0].external_reference == "TEST-123"
+    assert len(restarted.history(case.id)) == 1
+    assert restarted.evidence_store.verify_case(case.id) == []
