@@ -8,20 +8,21 @@ The functional local pilot currently exposes most case tools on one long page. T
 
 Use a compact step rail on desktop and a horizontal stepper on small screens. Only the current workspace is expanded by default; completed and future steps remain visible as concise summaries.
 
-1. **Intake** — target and case context recorded.
-2. **Collect** — passive jobs, status, failures, and evidence count.
-3. **Qualify** — human observations and confirmed criticality.
-4. **Prepare** — channel choice, summaries, email and form drafts.
-5. **Submit** — human confirmation, destination, proof and reference.
-6. **Follow up** — next check, response, escalation, mitigation and closure.
+1. **Case** — target, brand context, integrity and evidence export.
+2. **Evidence** — passive jobs, status, failures, snapshots and evidence count.
+3. **Qualification** — human observations and confirmed criticality.
+4. **Reports** — channel choice, summaries, email/form drafts and human submission record.
+5. **Follow-up** — next check, response, escalation, mitigation and closure.
 
 Every step displays exactly one derived state:
 
 - `to_do` — operator input is required now;
 - `in_progress` — a job or incomplete decision exists;
 - `complete` — the required outcome is recorded;
-- `blocked` — a concrete error prevents progress;
+- `attention` — a concrete error or overdue action requires review;
 - `scheduled` — no work is required before the displayed UTC date.
+
+A disabled optional capability is explained inside its step and does not block the next human task. The active step is derived from case facts, collection jobs and immutable events. Legacy action flags never override a recorded qualification or submission.
 
 ## Interaction principles
 
@@ -33,6 +34,10 @@ Every step displays exactly one derived state:
 - Allow direct links to each step and preserve keyboard navigation.
 - Show completed-step summaries without reopening their full forms.
 - Reserve the audit trail and technical diagnostics for a secondary drawer.
+
+## Implemented first pass
+
+The case page now uses the five-step rail, a single derived next-best action, one expanded workspace, compact completed-state summaries, a permanent evidence-export action, and a secondary journal. The dashboard/work-queue redesign and richer live job progress remain separate follow-up passes.
 
 ## Acceptance criteria for the UX pass
 

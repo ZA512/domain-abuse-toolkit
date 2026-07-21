@@ -1,390 +1,306 @@
 {% extends "base.html" %}
 {% block title %}{{ case.id }} — Domain Abuse Toolkit{% endblock %}
 {% block content %}
-  <nav class="breadcrumb"><a href="/">New case</a><span>/</span><span>{{ case.id }}</span></nav>
+  <nav class="breadcrumb" aria-label="Fil d’Ariane"><a href="/">Dossiers</a><span>/</span><span>{{ case.id }}</span></nav>
 
-  {% if pilot_notice %}
-    <div class="alert alert-neutral">Local pilot: this case is persisted and integrity-checked. A network collector runs only after explicit authorization from the collection panel.</div>
-  {% endif %}
-
-  <section class="case-header">
-    <div>
+  <header class="case-command-bar">
+    <div class="case-identity">
       <p class="eyebrow">{{ case.id }}</p>
       <h1>{{ case.target.registrable_domain }}</h1>
-      <p class="lead break-anywhere">{{ case.target.normalized_url }}</p>
+      <p class="case-url break-anywhere">{{ case.target.normalized_url }}</p>
     </div>
-    <div class="header-status">
-      <span class="badge badge-high">Proposed: {{ case.criticality_proposed }}</span>
-      {% if case.criticality_confirmed %}<span class="badge badge-safe">Confirmed: {{ case.criticality_confirmed }}</span>{% endif %}
-      <span class="badge">{{ case.state }}</span>
-      {% if technical_review %}<span class="badge {{ 'badge-high' if technical_review.overdue else 'badge-safe' }}">Technical check {{ 'due' if technical_review.overdue else 'scheduled' }}</span>{% endif %}
+    <div class="case-command-actions">
+      <div class="header-status" aria-label="État du dossier">
+        <span class="badge badge-high">Criticité {{ (case.criticality_confirmed or case.criticality_proposed).value }}</span>
+        <span class="badge">{{ case.state.value|replace('_', ' ') }}</span>
+      </div>
+      {% if not integrity_errors %}
+        <a class="button" href="/cases/{{ case.id }}/evidence.zip">Exporter les preuves</a>
+      {% endif %}
     </div>
-  </section>
+  </header>
 
-  <section class="stats-grid">
-    <div class="stat"><span>Brand</span><strong>{{ case.brand }}</strong></div>
-    <div class="stat"><span>Suspicion</span><strong>{{ case.suspicion_type }}</strong></div>
-    <div class="stat"><span>Exact path</span><strong class="break-anywhere">{{ case.target.path }}</strong></div>
-    <div class="stat"><span>Created UTC</span><strong>{{ case.created_at.strftime('%Y-%m-%d %H:%M') }}</strong></div>
-  </section>
+  {% if pilot_notice %}
+    <p class="pilot-notice">Pilote local · L’ouverture du dossier ne contacte jamais la cible. Toute collecte nécessite une autorisation explicite.</p>
+  {% endif %}
 
-  <section class="panel evidence-export">
+  <section class="next-action-card" aria-labelledby="next-action-title">
+    <div class="next-action-icon" aria-hidden="true">→</div>
     <div>
-      <p class="eyebrow">Evidence package</p>
-      <h2>Download a verifiable case archive</h2>
-      <p>The ZIP contains {{ artifact_count }} registered artifact{{ "s" if artifact_count != 1 else "" }}, the exact manifest and an offline verification script. Unregistered local files are excluded.</p>
-      {% if integrity_errors %}
-        <div class="alert" role="alert">Export blocked: {{ integrity_errors|join('; ') }}</div>
-      {% else %}
-        <span class="badge badge-safe">Integrity verified</span>
-      {% endif %}
+      <p class="eyebrow">Prochaine action recommandée</p>
+      <h2 id="next-action-title">{{ workflow.next_action_title }}</h2>
+      <p>{{ workflow.next_action_detail }}</p>
     </div>
-    {% if not integrity_errors %}
-      <a class="button button-primary" href="/cases/{{ case.id }}/evidence.zip">Download evidence ZIP</a>
-    {% endif %}
+    <a class="button button-primary" href="{{ workflow.next_action_href }}" data-workflow-link>{{ workflow.next_action_label }}</a>
   </section>
 
-  {% set q = case.qualification %}
-  <section id="qualification" class="panel qualification-panel">
-    <div class="section-heading">
-      <div>
-        <p class="eyebrow">Human validation desk</p>
-        <h2>Qualify the observed risk</h2>
-      </div>
-      <span class="badge {{ 'badge-safe' if q else '' }}">{{ "Reviewed" if q else "Required" }}</span>
-    </div>
-    <p class="lead qualification-intro">Record only observations that a human has verified. Saving a revision confirms the criticality and completes the validation action.</p>
-    {% if qualification_error %}<div class="alert" role="alert">{{ qualification_error }}</div>{% endif %}
+  <div class="workflow-layout" data-workflow-root data-default-step="{{ workflow.current_step_id }}">
+    <nav class="workflow-rail" aria-label="Étapes du dossier">
+      <p class="workflow-rail-title">Avancement</p>
+      {% for step in workflow.steps %}
+        <a class="workflow-step workflow-state-{{ step.state }}{% if step.current %} active{% endif %}"
+           href="{{ step.href }}"
+           data-workflow-step="{{ step.id }}"
+           {% if step.current %}aria-current="step"{% endif %}>
+          <span class="workflow-marker" aria-hidden="true">{{ "✓" if step.state == "complete" else loop.index }}</span>
+          <span class="workflow-step-copy">
+            <strong>{{ step.label }}</strong>
+            <small>{{ step.state_label }}</small>
+            <span>{{ step.summary }}</span>
+          </span>
+        </a>
+      {% endfor %}
+      <a class="workflow-utility-link" href="#case-details">Journal et détails techniques</a>
+    </nav>
 
-    <form action="/cases/{{ case.id }}/qualification" method="post" class="qualification-form">
-      <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
-      <fieldset class="decision-list">
-        <legend>Review checklist</legend>
-        <label class="decision"><input type="checkbox" name="brand_represented"{% if q and q.brand_represented %} checked{% endif %}><span><strong>Selected brand is represented</strong><small>Logo, name, identity or an unambiguous reference.</small></span></label>
-        <label class="decision"><input type="checkbox" name="copied_elements"{% if q and q.copied_elements %} checked{% endif %}><span><strong>Copied products, text or visuals are visible</strong><small>Content appears to reproduce legitimate material.</small></span></label>
-        <label class="decision"><input type="checkbox" name="sensitive_input_or_payment"{% if q and q.sensitive_input_or_payment %} checked{% endif %}><span><strong>Login, personal-data or payment path is offered</strong><small>The page solicits credentials, personal information or a transaction.</small></span></label>
-        <label class="decision"><input type="checkbox" name="victims_or_transactions"{% if q and q.victims_or_transactions %} checked{% endif %}><span><strong>Victims or fraudulent transactions are known</strong><small>Confirmed reports exist beyond the suspicious page itself.</small></span></label>
-        <label class="decision"><input type="checkbox" name="related_case_or_campaign"{% if q and q.related_case_or_campaign %} checked{% endif %}><span><strong>Related case, domain or campaign is known</strong><small>A recurrence or confirmed relationship has been identified.</small></span></label>
-        <label class="decision decision-factual"><input type="checkbox" name="publicly_available"{% if q and q.publicly_available %} checked{% endif %}><span><strong>Target is publicly available at review time</strong><small>This is a time-bound observation, not an automatic network check.</small></span></label>
-      </fieldset>
-
-      <div class="grid-two">
-        <label>
-          Confirmed criticality
-          <select name="confirmed_criticality" required>
-            {% for criticality in criticalities %}
-              <option value="{{ criticality }}"{% if (q and q.confirmed_criticality == criticality) or (not q and case.criticality_proposed == criticality) %} selected{% endif %}>{{ criticality|upper }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <label>
-          Reviewer / initials
-          <input name="reviewer" required maxlength="80" value="{{ q.reviewer if q else '' }}" placeholder="e.g. MG">
-        </label>
-      </div>
-      <label>
-        Override reason
-        <textarea name="override_reason" rows="3" maxlength="1000" placeholder="Required only when confirmed criticality differs from the proposal">{{ q.override_reason if q and q.override_reason else '' }}</textarea>
-      </label>
-      <div class="qualification-footer">
-        {% if q %}<small>Latest review: {{ q.occurred_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC · {{ q.reviewer }}</small>{% endif %}
-        <button class="button button-primary" type="submit">{{ "Record a new revision" if q else "Confirm qualification" }}</button>
-      </div>
-    </form>
-  </section>
-
-  <div class="layout-two layout-case">
-    <section id="actions" class="panel">
-      <div class="section-heading">
-        <div><p class="eyebrow">Action cockpit</p><h2>Recommended next actions</h2></div>
-      </div>
-      <div class="action-stack">
-        {% for item in actions %}
-          <article class="action-card{% if item.action.completed_at %} action-completed{% elif item.overdue %} action-overdue{% endif %}">
-            <span class="action-check" aria-hidden="true">{{ "✓" if item.action.completed_at else loop.index }}</span>
-            <div>
-              <h3>{{ item.action.title }}</h3>
-              <p>{{ item.action.reason }}</p>
-              {% if item.action.completed_at %}
-                <small>Completed {{ item.action.completed_at.strftime('%Y-%m-%d %H:%M') }} UTC</small>
-              {% else %}
-                <small class="{% if item.overdue %}overdue-text{% endif %}">Due {{ item.due_at.strftime('%Y-%m-%d %H:%M') }} UTC</small>
-              {% endif %}
-            </div>
-            <form action="/cases/{{ case.id }}/actions/{{ item.action.code }}" method="post">
-              <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
-              <input type="hidden" name="completed" value="{{ 'false' if item.action.completed_at else 'true' }}">
-              <button class="button button-small" type="submit">{{ "Reopen" if item.action.completed_at else "Mark complete" }}</button>
-            </form>
-          </article>
-        {% endfor %}
-      </div>
-    </section>
-
-    <aside id="collection" class="panel collection-panel">
-      <div class="section-heading">
-        <div><p class="eyebrow">Collection</p><h2>Capability status</h2></div>
-      </div>
-      <dl class="definition-list">
-        <div><dt>Network</dt><dd>{{ "Enabled" if capabilities.network_collection else "Disabled" }}</dd></div>
-        <div><dt>RDAP registration</dt><dd>{{ "Enabled" if capabilities.rdap_collection else "Disabled" }}</dd></div>
-        <div><dt>Offline rendering</dt><dd>{{ "Enabled" if capabilities.screenshots else "Disabled" }}</dd></div>
-        <div><dt>External APIs</dt><dd>{{ "Enabled" if capabilities.external_apis else "Disabled" }}</dd></div>
-        <div><dt>LLM</dt><dd>{{ "Enabled" if capabilities.llm else "Disabled" }}</dd></div>
-      </dl>
-      <p class="callout">Opening this case never contacts the target. An authorized passive job collects DNS, a bounded HTTP response, the TLS leaf certificate{% if capabilities.rdap_collection %}, authoritative RDAP registration data{% endif %}{% if capabilities.screenshots %}, then renders the bounded HTML offline with JavaScript and network access disabled{% endif %}.</p>
-      {% if collection_error %}<div class="alert" role="alert">{{ collection_error }}</div>{% endif %}
-      {% if capabilities.network_collection %}
-        <form action="/cases/{{ case.id }}/collections/passive" method="post" class="collection-form">
-          <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
-          <label class="confirmation-check">
-            <input type="checkbox" name="confirmed_authorized" value="true" required>
-            <span>I am authorized to perform passive DNS, bounded HTTP/TLS and RDAP collection{% if capabilities.screenshots %}, followed by an offline static rendering{% endif %} for this target.</span>
-          </label>
-          <button class="button button-primary" type="submit"{% if latest_collection_job and latest_collection_job.status in ['queued', 'running'] %} disabled{% endif %}>Start passive evidence collection</button>
-        </form>
-      {% else %}
-        <p class="collection-disabled">Network collection is disabled by default. Restart with the dedicated opt-in launcher when you are ready to test it.</p>
-      {% endif %}
-      {% if latest_collection_job %}
-        <p class="job-status"><strong>Latest job: {{ latest_collection_job.status }}</strong><small>{{ latest_collection_job.id }}</small></p>
-      {% endif %}
-      {% if technical_review %}
-        <div class="review-due {{ 'review-overdue' if technical_review.overdue else '' }}">
-          <strong>{{ 'Technical review due now' if technical_review.overdue else 'Next technical review' }}</strong>
-          <span>{{ technical_review.due_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
-          <small>A new collection starts only after the authorization checkbox and button above.</small>
+    <div class="workflow-content">
+      <section id="overview" class="panel workflow-panel" data-workflow-panel="overview" tabindex="-1">
+        <div class="section-heading">
+          <div><p class="eyebrow">Étape 1</p><h2>Dossier enregistré</h2></div>
+          <span class="badge badge-safe">Terminé</span>
         </div>
-      {% elif not latest_snapshot %}
-        <p class="collection-disabled">The first technical review will be scheduled after the first completed collection.</p>
-      {% endif %}
-    </aside>
-  </div>
+        <div class="stats-grid case-facts">
+          <div class="stat"><span>Marque</span><strong>{{ case.brand }}</strong></div>
+          <div class="stat"><span>Suspicion</span><strong>{{ case.suspicion_type }}</strong></div>
+          <div class="stat"><span>Site légitime</span><strong class="break-anywhere">{{ case.legit_url }}</strong></div>
+          <div class="stat"><span>Créé le</span><strong>{{ case.created_at.strftime('%d/%m/%Y %H:%M') }} UTC</strong></div>
+        </div>
+        <div class="integrity-summary {{ 'integrity-error' if integrity_errors else '' }}">
+          <div>
+            <strong>{{ "Export bloqué" if integrity_errors else "Intégrité vérifiée" }}</strong>
+            <span>{{ artifact_count }} élément(s) enregistré(s) dans le manifeste de preuves.</span>
+          </div>
+          {% if integrity_errors %}<p class="alert" role="alert">{{ integrity_errors|join('; ') }}</p>{% endif %}
+        </div>
+      </section>
 
-  {% if snapshots %}
-    <section class="panel snapshot-panel">
-      <div class="section-heading">
-        <div><p class="eyebrow">Passive evidence</p><h2>Technical snapshots</h2></div>
-        <span class="badge">{{ snapshots|length }} snapshot{{ 's' if snapshots|length != 1 else '' }}</span>
-      </div>
-      <div class="snapshot-stack">
-        {% for snapshot in snapshots %}
-          <article class="snapshot-card">
-            <div class="snapshot-heading">
-              <div><strong>{{ snapshot.id }}</strong><small>{{ snapshot.finished_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</small></div>
-              <span class="badge {{ 'badge-safe' if snapshot.status == 'complete' else 'badge-high' }}">{{ snapshot.status }}</span>
-            </div>
-            {% if snapshot.next_check_due_at %}<p class="snapshot-review-date">Next operator check {{ snapshot.next_check_due_at.strftime('%Y-%m-%d %H:%M') }} UTC</p>{% endif %}
-            {% if snapshot.previous_snapshot_id %}
-              <div class="change-summary">
-                <strong>{{ snapshot.changes|length }} change{{ 's' if snapshot.changes|length != 1 else '' }} since {{ snapshot.previous_snapshot_id }}</strong>
-                {% if snapshot.changes %}
-                  <div class="change-list">
+      <section id="evidence" class="panel workflow-panel" data-workflow-panel="evidence" tabindex="-1">
+        <div class="section-heading">
+          <div><p class="eyebrow">Étape 2</p><h2>Constituer les preuves</h2></div>
+          {% set evidence_step = workflow.steps[1] %}<span class="badge workflow-badge-{{ evidence_step.state }}">{{ evidence_step.state_label }}</span>
+        </div>
+        <p class="section-intro">Une collecte ne démarre qu’après votre confirmation. L’ouverture de cette étape reste sans effet réseau.</p>
+
+        {% if collection_error %}<div class="alert" role="alert">{{ collection_error }}</div>{% endif %}
+        {% if capabilities.network_collection %}
+          <form action="/cases/{{ case.id }}/collections/passive" method="post" class="collection-form primary-task">
+            <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
+            <label class="confirmation-check">
+              <input type="checkbox" name="confirmed_authorized" value="true" required>
+              <span><strong>Je confirme être autorisé à collecter ces éléments.</strong><small>DNS, HTTP/TLS borné, RDAP et rendu statique hors ligne si disponible.</small></span>
+            </label>
+            <button class="button button-primary" type="submit"{% if latest_collection_job and latest_collection_job.status in ['queued', 'running'] %} disabled{% endif %}>Lancer la collecte autorisée</button>
+          </form>
+        {% else %}
+          <div class="capability-message">
+            <div><strong>Collecte technique désactivée dans le mode sûr</strong><span>Vous pouvez poursuivre la qualification avec vos observations manuelles.</span></div>
+            <small>Utilisez le lanceur réseau dédié uniquement pour une cible autorisée.</small>
+          </div>
+        {% endif %}
+
+        {% if latest_collection_job %}
+          <p class="job-status"><strong>Dernière tâche : {{ latest_collection_job.status }}</strong><small>{{ latest_collection_job.id }}</small></p>
+        {% endif %}
+
+        {% if snapshots %}
+          <div class="snapshot-stack compact-snapshots">
+            {% for snapshot in snapshots %}
+              <article class="snapshot-card">
+                <div class="snapshot-heading">
+                  <div><strong>Relevé du {{ snapshot.finished_at.strftime('%d/%m/%Y à %H:%M') }} UTC</strong><small>{{ snapshot.id }}</small></div>
+                  <span class="badge {{ 'badge-safe' if snapshot.status == 'complete' else 'badge-high' }}">{{ snapshot.status }}</span>
+                </div>
+                {% if snapshot.previous_snapshot_id %}
+                  <div class="change-summary">
+                    <strong>{{ snapshot.changes|length }} changement(s) depuis le relevé précédent</strong>
                     {% for change in snapshot.changes %}
                       <article class="change-row {{ 'change-important' if change.important else '' }}">
                         <span class="change-kind">{{ change.change_type }}</span>
-                        <div>
-                          <strong>{{ change.collector|upper }} · {{ change.record_type or change.name }}</strong>
-                          {% if change.record_type %}<small>{{ change.name }}</small>{% endif %}
-                          <code class="break-anywhere">{{ change.before|join(', ') if change.before else '—' }} → {{ change.after|join(', ') if change.after else '—' }}</code>
-                        </div>
+                        <div><strong>{{ change.collector|upper }} · {{ change.record_type or change.name }}</strong><code class="break-anywhere">{{ change.before|join(', ') if change.before else '—' }} → {{ change.after|join(', ') if change.after else '—' }}</code></div>
                       </article>
                     {% endfor %}
                   </div>
                 {% else %}
-                  <p class="no-change">No normalized technical change detected.</p>
+                  <p class="no-change">Relevé de référence : les prochains contrôles seront comparés à celui-ci.</p>
                 {% endif %}
-              </div>
-            {% else %}
-              <p class="no-change">Baseline snapshot — future collections will be compared with this one.</p>
-            {% endif %}
-            <details class="snapshot-raw">
-              <summary>Show collector details and unchanged observations</summary>
-              {% for result in snapshot.results %}
-                <p>{{ result.collector|upper }} collector {{ result.version }} · {{ result.observations|length }} observations · {{ result.artifacts|length }} raw responses</p>
-                {% if result.observations %}
-                  <div class="dns-records">
-                    {% for observation in result.observations %}
-                      <div><span>{{ observation.record_type or observation.category }}</span><code class="break-anywhere">{{ observation.name }} · {{ observation.value }}</code>{% if observation.ttl is not none %}<small>TTL {{ observation.ttl }}</small>{% endif %}</div>
-                    {% endfor %}
-                  </div>
-                {% endif %}
-                {% for error in result.errors %}<div class="alert" role="alert"><strong>{{ error.code }}</strong> · {{ error.message }}</div>{% endfor %}
-                {% if result.collector == "screenshot" and result.artifacts %}
-                  <figure class="capture-preview">
-                    <img src="/cases/{{ case.id }}/snapshots/{{ snapshot.id }}/capture.png" alt="Offline static rendering captured for snapshot {{ snapshot.id }}" loading="lazy">
-                    <figcaption>Derived offline rendering · JavaScript disabled · network blocked</figcaption>
-                  </figure>
-                {% endif %}
-              {% endfor %}
-            </details>
-          </article>
-        {% endfor %}
-      </div>
-    </section>
-  {% endif %}
-
-  <section class="panel timeline-panel">
-    <div class="section-heading">
-      <div><p class="eyebrow">Audit trail</p><h2>Workflow history</h2></div>
-      <span class="badge">{{ history|length }} events</span>
-    </div>
-    {% if history %}
-      <ol class="timeline">
-        {% for item in history %}
-          <li>
-            <span class="timeline-dot" aria-hidden="true"></span>
-            <div>
-              {% if item.kind == "action" %}
-                <strong>{{ "Completed" if item.event.completed else "Reopened" }} · {{ item.action_title }}</strong>
-              {% elif item.kind == "qualification" %}
-                <strong>Qualification confirmed · {{ item.event.confirmed_criticality|upper }}</strong>
-                <span class="timeline-detail">Reviewed by {{ item.event.reviewer }}{% if item.event.override_reason %} · Override: {{ item.event.override_reason }}{% endif %}</span>
-              {% elif item.kind == "submission" %}
-                <strong>External submission recorded · {{ item.event.channel_name }}</strong>
-                <span class="timeline-detail">{% if item.event.external_reference %}Reference {{ item.event.external_reference }} · {% endif %}Follow-up due {{ item.event.follow_up_due_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
-              {% else %}
-                <strong>Passive snapshot recorded · {{ item.event.status|upper }}</strong>
-                <span class="timeline-detail">{{ item.event.results|length }} collector result{{ 's' if item.event.results|length != 1 else '' }} · {{ item.event.id }}</span>
-              {% endif %}
-              <small>{{ item.event.occurred_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC · {{ item.event.id }}</small>
-            </div>
-          </li>
-        {% endfor %}
-      </ol>
-    {% else %}
-      <p class="empty-state">No workflow event yet. Completing an action creates an immutable, integrity-checked event.</p>
-    {% endif %}
-  </section>
-
-  <section class="panel reporting-workspace">
-    <div class="section-heading">
-      <div>
-        <p class="eyebrow">Reporting workspace</p>
-        <h2>Open the right official channel</h2>
-      </div>
-      <span class="badge badge-safe">Human submission only</span>
-    </div>
-    <p class="lead">Copy the prepared facts, then open the official form. Links are versioned and show their last verification date; no form is submitted by this application.</p>
-
-    <div class="report-summary-grid">
-      <article class="report-summary">
-        <label>English form summary<textarea id="report-summary-en" rows="11" readonly>{{ reporting_summaries.en }}</textarea></label>
-        <button class="button" type="button" data-copy="#report-summary-en">Copy English summary</button>
-      </article>
-      <article class="report-summary">
-        <label>Résumé français<textarea id="report-summary-fr" rows="11" readonly>{{ reporting_summaries.fr }}</textarea></label>
-        <button class="button" type="button" data-copy="#report-summary-fr">Copier le résumé français</button>
-      </article>
-    </div>
-
-    <div class="channel-grid">
-      {% for item in reporting_channels %}
-        <article class="channel-card{% if item.recommended %} channel-recommended{% endif %}">
-          <div class="channel-card-heading">
-            <span class="badge">{{ item.channel.category|replace('_', ' ') }}</span>
-            {% if item.recommended %}<span class="badge badge-safe">Suggested</span>{% endif %}
-          </div>
-          <h3>{{ item.channel.name }}</h3>
-          <p>{{ item.channel.purpose }}</p>
-          <p class="channel-reason">{{ item.recommendation_reason }}</p>
-          <details>
-            <summary>Required information</summary>
-            <ul class="compact-list">
-              {% for field in item.channel.required_fields %}<li>{{ field }}</li>{% endfor %}
-            </ul>
-            <p>{{ item.channel.notes }}</p>
-          </details>
-          <div class="channel-card-footer">
-            <small>Verified {{ item.channel.verified_on }} · <a href="{{ item.source_url }}" target="_blank" rel="noopener noreferrer">official source</a></small>
-            <a class="button button-primary" href="{{ item.action_url }}" target="_blank" rel="noopener noreferrer">Open official site</a>
-          </div>
-        </article>
-      {% endfor %}
-    </div>
-
-    <div id="record-submission" class="submission-recorder">
-      <div class="section-heading">
-        <div>
-          <p class="eyebrow">Follow-up cadence</p>
-          <h2>Record a completed submission</h2>
-        </div>
-        {% if latest_submission %}
-          <span class="badge">Next follow-up {{ latest_submission.follow_up_due_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
-        {% else %}
-          <span class="badge">Waiting for confirmation</span>
-        {% endif %}
-      </div>
-      <p>Use this only after the official form or email has actually been sent. The toolkit stores an integrity-checked event and moves the case to <code>waiting_external</code>.</p>
-      {% if submission_error %}<p class="alert alert-error">{{ submission_error }}</p>{% endif %}
-      <form class="submission-form" method="post" action="/cases/{{ case.id }}/submissions">
-        <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
-        <label>Channel
-          <select name="channel_id" required>
-            <option value="">Choose the completed channel</option>
-            {% for channel in submission_options %}
-              <option value="{{ channel.id }}">{{ channel.name }} · {{ channel.category|replace('_', ' ') }}</option>
+                <details class="snapshot-raw">
+                  <summary>Afficher les observations et pièces techniques</summary>
+                  {% for result in snapshot.results %}
+                    <p><strong>{{ result.collector|upper }}</strong> · {{ result.observations|length }} observation(s) · {{ result.artifacts|length }} pièce(s)</p>
+                    {% if result.observations %}
+                      <div class="dns-records">
+                        {% for observation in result.observations %}
+                          <div><span>{{ observation.record_type or observation.category }}</span><code class="break-anywhere">{{ observation.name }} · {{ observation.value }}</code>{% if observation.ttl is not none %}<small>TTL {{ observation.ttl }}</small>{% endif %}</div>
+                        {% endfor %}
+                      </div>
+                    {% endif %}
+                    {% for error in result.errors %}<div class="alert" role="alert"><strong>{{ error.code }}</strong> · {{ error.message }}</div>{% endfor %}
+                    {% if result.collector == "screenshot" and result.artifacts %}
+                      <figure class="capture-preview"><img src="/cases/{{ case.id }}/snapshots/{{ snapshot.id }}/capture.png" alt="Rendu statique hors ligne du relevé {{ snapshot.id }}" loading="lazy"><figcaption>Rendu dérivé hors ligne · JavaScript et réseau désactivés</figcaption></figure>
+                    {% endif %}
+                  {% endfor %}
+                </details>
+              </article>
             {% endfor %}
-          </select>
-        </label>
-        <label>Destination used
-          <input name="destination" maxlength="254" placeholder="Official form URL or abuse email">
-        </label>
-        <label>External reference
-          <input name="external_reference" maxlength="200" placeholder="Ticket, acknowledgement or message ID">
-        </label>
-        <label class="submission-notes">Notes
-          <textarea name="notes" rows="3" maxlength="1000" placeholder="Useful factual follow-up details"></textarea>
-        </label>
-        <label class="confirmation-check submission-notes">
-          <input type="checkbox" name="confirmed_submitted" value="true" required>
-          <span>I confirm this submission was actually sent outside the toolkit.</span>
-        </label>
-        <div class="submission-notes"><button class="button button-primary" type="submit">Record submission and schedule follow-up</button></div>
-      </form>
+          </div>
+        {% else %}
+          <p class="empty-workspace">Aucun relevé technique n’a encore été enregistré.</p>
+        {% endif %}
+      </section>
 
-      {% if case.submissions %}
-        <div class="submission-list">
-          {% for submission in case.submissions|reverse %}
-            <article>
-              <div><strong>{{ submission.channel_name }}</strong><small>Sent {{ submission.occurred_at.strftime('%Y-%m-%d %H:%M') }} UTC</small></div>
-              <div>{% if submission.external_reference %}<strong>{{ submission.external_reference }}</strong>{% else %}<span>No external reference</span>{% endif %}<small>Follow-up {{ submission.follow_up_due_at.strftime('%Y-%m-%d %H:%M') }} UTC</small></div>
+      {% set q = case.qualification %}
+      <section id="qualification" class="panel workflow-panel" data-workflow-panel="qualification" tabindex="-1">
+        <div class="section-heading">
+          <div><p class="eyebrow">Étape 3</p><h2>Qualifier les observations</h2></div>
+          <span class="badge {{ 'badge-safe' if q else 'badge-high' }}">{{ "Terminé" if q else "À faire" }}</span>
+        </div>
+        {% if q %}
+          <div class="completion-summary">
+            <div><strong>Criticité {{ q.confirmed_criticality.value|upper }}</strong><span>Validée par {{ q.reviewer }} le {{ q.occurred_at.strftime('%d/%m/%Y à %H:%M') }} UTC.</span></div>
+            <span aria-hidden="true">✓</span>
+          </div>
+        {% endif %}
+        {% if qualification_error %}<div class="alert" role="alert">{{ qualification_error }}</div>{% endif %}
+
+        <details class="task-disclosure" {% if not q or qualification_error %}open{% endif %}>
+          <summary>{{ "Modifier la qualification" if q else "Commencer la qualification" }}</summary>
+          <form action="/cases/{{ case.id }}/qualification" method="post" class="qualification-form">
+            <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
+            <fieldset class="decision-list">
+              <legend>Observations vérifiées</legend>
+              <label class="decision"><input type="checkbox" name="brand_represented"{% if q and q.brand_represented %} checked{% endif %}><span><strong>La marque sélectionnée est représentée</strong><small>Logo, nom, identité ou référence non ambiguë.</small></span></label>
+              <label class="decision"><input type="checkbox" name="copied_elements"{% if q and q.copied_elements %} checked{% endif %}><span><strong>Des produits, textes ou visuels sont copiés</strong><small>Le contenu reproduit des éléments du site légitime.</small></span></label>
+              <label class="decision"><input type="checkbox" name="sensitive_input_or_payment"{% if q and q.sensitive_input_or_payment %} checked{% endif %}><span><strong>Un parcours de connexion, données ou paiement est proposé</strong><small>La page sollicite des informations sensibles ou une transaction.</small></span></label>
+              <label class="decision"><input type="checkbox" name="victims_or_transactions"{% if q and q.victims_or_transactions %} checked{% endif %}><span><strong>Des victimes ou transactions sont connues</strong><small>Des signalements confirmés existent au-delà de la page.</small></span></label>
+              <label class="decision"><input type="checkbox" name="related_case_or_campaign"{% if q and q.related_case_or_campaign %} checked{% endif %}><span><strong>Un dossier ou une campagne est lié</strong><small>Une récurrence ou une relation a été identifiée.</small></span></label>
+              <label class="decision decision-factual"><input type="checkbox" name="publicly_available"{% if q and q.publicly_available %} checked{% endif %}><span><strong>La cible était accessible au moment de la revue</strong><small>Observation humaine datée, sans contrôle réseau automatique.</small></span></label>
+            </fieldset>
+            <div class="grid-two">
+              <label>Criticité confirmée<select name="confirmed_criticality" required>{% for criticality in criticalities %}<option value="{{ criticality }}"{% if (q and q.confirmed_criticality == criticality) or (not q and case.criticality_proposed == criticality) %} selected{% endif %}>{{ criticality|upper }}</option>{% endfor %}</select></label>
+              <label>Relecteur / initiales<input name="reviewer" required maxlength="80" value="{{ q.reviewer if q else '' }}" placeholder="Ex. MG"></label>
+            </div>
+            <label>Motif de modification<textarea name="override_reason" rows="3" maxlength="1000" placeholder="Requis seulement si la criticité diffère de la proposition">{{ q.override_reason if q and q.override_reason else '' }}</textarea></label>
+            <div class="form-actions"><button class="button button-primary" type="submit">{{ "Enregistrer une nouvelle version" if q else "Confirmer la qualification" }}</button></div>
+          </form>
+        </details>
+      </section>
+
+      <section id="reporting" class="panel workflow-panel" data-workflow-panel="reporting" tabindex="-1">
+        <div class="section-heading">
+          <div><p class="eyebrow">Étape 4</p><h2>Préparer et effectuer les signalements</h2></div>
+          <span class="badge badge-safe">Envoi humain uniquement</span>
+        </div>
+        <p class="section-intro">Commencez par le canal recommandé. L’outil prépare les informations et ouvre la destination, mais ne soumet rien.</p>
+
+        <div class="channel-grid">
+          {% for item in reporting_channels %}
+            <article class="channel-card{% if item.recommended %} channel-recommended{% endif %}">
+              <div class="channel-card-heading"><span class="badge">{{ item.channel.category|replace('_', ' ') }}</span>{% if item.recommended %}<span class="badge badge-safe">Recommandé</span>{% endif %}</div>
+              <h3>{{ item.channel.name }}</h3>
+              <p>{{ item.channel.purpose }}</p>
+              <p class="channel-reason">{{ item.recommendation_reason }}</p>
+              <details><summary>Informations nécessaires</summary><ul class="compact-list">{% for field in item.channel.required_fields %}<li>{{ field }}</li>{% endfor %}</ul><p>{{ item.channel.notes }}</p></details>
+              <div class="channel-card-footer"><small>Vérifié le {{ item.channel.verified_on }}</small><a class="button button-primary" href="{{ item.action_url }}" target="_blank" rel="noopener noreferrer">Ouvrir le site officiel</a></div>
             </article>
           {% endfor %}
         </div>
-      {% endif %}
-    </div>
-  </section>
 
-  <section class="panel">
-    <div class="section-heading">
-      <div><p class="eyebrow">Draft workspace</p><h2>Registrar drafts</h2></div>
-      <span class="badge badge-safe">Not sent</span>
-    </div>
+        <details class="toolbox-disclosure">
+          <summary>Copier un résumé pour un formulaire</summary>
+          <div class="report-summary-grid">
+            <article class="report-summary"><label>Résumé français<textarea id="report-summary-fr" rows="10" readonly>{{ reporting_summaries.fr }}</textarea></label><button class="button" type="button" data-copy="#report-summary-fr">Copier le résumé français</button></article>
+            <article class="report-summary"><label>Résumé anglais<textarea id="report-summary-en" rows="10" readonly>{{ reporting_summaries.en }}</textarea></label><button class="button" type="button" data-copy="#report-summary-en">Copier le résumé anglais</button></article>
+          </div>
+        </details>
 
-    <label class="email-recipient">
-      Email recipient (optional)
-      <input id="email-recipient" type="email" maxlength="254" autocomplete="off" placeholder="abuse@registrar.example">
-      <small>Paste the official abuse email found through ICANN Lookup or the provider site. This value is used only to open your mail client and is not stored yet.</small>
-    </label>
+        <details class="toolbox-disclosure">
+          <summary>Préparer un email au registrar</summary>
+          <label class="email-recipient">Adresse du destinataire<input id="email-recipient" type="email" maxlength="254" autocomplete="off" placeholder="abuse@registrar.example"><small>L’adresse sert uniquement à ouvrir votre messagerie et n’est pas enregistrée.</small></label>
+          <div class="tabs" role="tablist" aria-label="Langue du brouillon">{% for item in drafts %}<button class="tab-button{% if loop.first %} active{% endif %}" data-tab-target="draft-{{ item.draft.language }}" type="button">{{ item.draft.language|upper }}</button>{% endfor %}</div>
+          {% for item in drafts %}
+            <article id="draft-{{ item.draft.language }}" class="draft{% if not loop.first %} hidden{% endif %}">
+              <label>Objet<input id="subject-{{ item.draft.language }}" value="{{ item.draft.subject }}" readonly></label>
+              <label>Corps<textarea id="body-{{ item.draft.language }}" rows="14" readonly>{{ item.draft.body }}</textarea></label>
+              <p class="draft-meta">Modèle {{ item.draft.template_version }} · Champs manquants : {{ item.draft.missing_placeholders|join(', ') }}</p>
+              <div class="button-row"><button class="button" type="button" data-copy="#subject-{{ item.draft.language }}">Copier l’objet</button><button class="button" type="button" data-copy="#body-{{ item.draft.language }}">Copier le corps</button><a class="button button-primary" href="{{ item.mailto }}" data-email-draft data-recipient="#email-recipient" data-subject="#subject-{{ item.draft.language }}" data-body="#body-{{ item.draft.language }}">Ouvrir dans la messagerie</a></div>
+            </article>
+          {% endfor %}
+        </details>
 
-    <div class="tabs" role="tablist" aria-label="Draft languages">
-      {% for item in drafts %}
-        <button class="tab-button{% if loop.first %} active{% endif %}" data-tab-target="draft-{{ item.draft.language }}" type="button">{{ item.draft.language|upper }}</button>
-      {% endfor %}
-    </div>
+        <details id="record-submission" class="task-disclosure" {% if submission_error %}open{% endif %}>
+          <summary>J’ai effectué un signalement : enregistrer le résultat</summary>
+          <p>À utiliser uniquement après l’envoi réel sur le site officiel ou dans votre messagerie.</p>
+          {% if submission_error %}<div class="alert" role="alert">{{ submission_error }}</div>{% endif %}
+          <form class="submission-form" method="post" action="/cases/{{ case.id }}/submissions">
+            <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
+            <label>Canal<select name="channel_id" required><option value="">Choisir le canal utilisé</option>{% for channel in submission_options %}<option value="{{ channel.id }}">{{ channel.name }} · {{ channel.category|replace('_', ' ') }}</option>{% endfor %}</select></label>
+            <label>Destination utilisée<input name="destination" maxlength="254" placeholder="Formulaire officiel ou adresse email"></label>
+            <label>Référence externe<input name="external_reference" maxlength="200" placeholder="Ticket, accusé ou identifiant du message"></label>
+            <label class="submission-notes">Notes<textarea name="notes" rows="3" maxlength="1000" placeholder="Informations utiles au suivi"></textarea></label>
+            <label class="confirmation-check submission-notes"><input type="checkbox" name="confirmed_submitted" value="true" required><span>Je confirme que ce signalement a réellement été envoyé hors de l’outil.</span></label>
+            <div class="submission-notes form-actions"><button class="button button-primary" type="submit">Enregistrer et planifier le suivi</button></div>
+          </form>
+        </details>
+      </section>
 
-    {% for item in drafts %}
-      <article id="draft-{{ item.draft.language }}" class="draft{% if not loop.first %} hidden{% endif %}">
-        <label>Subject<input id="subject-{{ item.draft.language }}" value="{{ item.draft.subject }}" readonly></label>
-        <label>Body<textarea id="body-{{ item.draft.language }}" rows="16" readonly>{{ item.draft.body }}</textarea></label>
-        <p class="draft-meta">Template {{ item.draft.template_version }} · Missing: {{ item.draft.missing_placeholders|join(', ') }}</p>
-        <div class="button-row">
-          <button class="button" type="button" data-copy="#subject-{{ item.draft.language }}">Copy subject</button>
-          <button class="button" type="button" data-copy="#body-{{ item.draft.language }}">Copy body</button>
-          <a class="button button-primary" href="{{ item.mailto }}" data-email-draft data-recipient="#email-recipient" data-subject="#subject-{{ item.draft.language }}" data-body="#body-{{ item.draft.language }}">Open addressed email</a>
+      <section id="follow-up" class="panel workflow-panel" data-workflow-panel="follow-up" tabindex="-1">
+        <div class="section-heading">
+          <div><p class="eyebrow">Étape 5</p><h2>Suivre les démarches</h2></div>
+          {% set follow_step = workflow.steps[4] %}<span class="badge workflow-badge-{{ follow_step.state }}">{{ follow_step.state_label }}</span>
         </div>
-      </article>
-    {% endfor %}
-  </section>
+        {% if latest_submission %}
+          <div class="follow-up-focus {{ 'review-overdue' if latest_submission.follow_up_due_at <= now else '' }}">
+            <p class="eyebrow">Prochaine échéance</p>
+            <strong>{{ latest_submission.follow_up_due_at.strftime('%d/%m/%Y à %H:%M') }} UTC</strong>
+            <span>{{ "Une action est attendue maintenant." if latest_submission.follow_up_due_at <= now else "Aucune action n’est requise avant cette date." }}</span>
+          </div>
+          <div class="submission-list">
+            {% for submission in case.submissions|reverse %}
+              <article><div><strong>{{ submission.channel_name }}</strong><small>Envoyé le {{ submission.occurred_at.strftime('%d/%m/%Y à %H:%M') }} UTC</small></div><div>{% if submission.external_reference %}<strong>{{ submission.external_reference }}</strong>{% else %}<span>Aucune référence externe</span>{% endif %}<small>Relance le {{ submission.follow_up_due_at.strftime('%d/%m/%Y à %H:%M') }} UTC</small></div></article>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="empty-workspace">Le suivi sera planifié automatiquement après l’enregistrement du premier signalement.</p>
+          <a class="button button-primary" href="#reporting" data-workflow-link>Préparer un signalement</a>
+        {% endif %}
+        {% if technical_review %}
+          <div class="review-due {{ 'review-overdue' if technical_review.overdue else '' }}"><strong>{{ 'Contrôle technique attendu' if technical_review.overdue else 'Prochain contrôle technique' }}</strong><span>{{ technical_review.due_at.strftime('%d/%m/%Y à %H:%M') }} UTC</span><a href="#evidence" data-workflow-link>Ouvrir les preuves</a></div>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+
+  <details id="case-details" class="panel case-details">
+    <summary><span><strong>Journal du dossier et outils secondaires</strong><small>{{ history|length }} événement(s) · détails de conformité et actions internes</small></span></summary>
+    <div class="secondary-grid">
+      <section>
+        <h2>Historique</h2>
+        {% if history %}
+          <ol class="timeline">
+            {% for item in history %}
+              <li><span class="timeline-dot" aria-hidden="true"></span><div>
+                {% if item.kind == "action" %}<strong>{{ "Terminée" if item.event.completed else "Rouverte" }} · {{ item.action_title }}</strong>
+                {% elif item.kind == "qualification" %}<strong>Qualification confirmée · {{ item.event.confirmed_criticality|upper }}</strong><span class="timeline-detail">Revue par {{ item.event.reviewer }}</span>
+                {% elif item.kind == "submission" %}<strong>Signalement enregistré · {{ item.event.channel_name }}</strong><span class="timeline-detail">Relance prévue le {{ item.event.follow_up_due_at.strftime('%d/%m/%Y à %H:%M') }} UTC</span>
+                {% else %}<strong>Relevé technique enregistré · {{ item.event.status|upper }}</strong>{% endif %}
+                <small>{{ item.event.occurred_at.strftime('%d/%m/%Y %H:%M:%S') }} UTC · {{ item.event.id }}</small>
+              </div></li>
+            {% endfor %}
+          </ol>
+        {% else %}<p class="empty-state">Aucun événement enregistré.</p>{% endif %}
+      </section>
+      <section>
+        <h2>Actions internes</h2>
+        <div class="action-stack">
+          {% for item in actions %}
+            <article class="action-card{% if item.action.completed_at %} action-completed{% elif item.overdue %} action-overdue{% endif %}">
+              <span class="action-check" aria-hidden="true">{{ "✓" if item.action.completed_at else loop.index }}</span>
+              <div><h3>{{ item.action.title }}</h3><p>{{ item.action.reason }}</p></div>
+              <form action="/cases/{{ case.id }}/actions/{{ item.action.code }}" method="post"><input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}"><input type="hidden" name="completed" value="{{ 'false' if item.action.completed_at else 'true' }}"><button class="button button-small" type="submit">{{ "Rouvrir" if item.action.completed_at else "Marquer terminée" }}</button></form>
+            </article>
+          {% endfor %}
+        </div>
+      </section>
+    </div>
+  </details>
 {% endblock %}

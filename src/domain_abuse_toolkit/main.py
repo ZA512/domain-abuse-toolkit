@@ -54,6 +54,7 @@ from domain_abuse_toolkit.services.web_collector import (
     BoundedAddressResolver,
     WebCollector,
 )
+from domain_abuse_toolkit.services.workflow import build_case_workflow
 
 settings = get_settings()
 package_root = Path(__file__).resolve().parent
@@ -230,6 +231,15 @@ def _case_context(
             "due_at": latest_snapshot.next_check_due_at,
             "overdue": latest_snapshot.next_check_due_at <= now,
         }
+    latest_collection_job = collection_jobs.latest_for_case(case_id)
+    capabilities = case_service.capabilities(settings)
+    workflow = build_case_workflow(
+        record,
+        network_collection_enabled=capabilities.network_collection,
+        latest_collection_job=latest_collection_job,
+        collection_error=collection_error,
+        now=now,
+    )
     return {
         "request": request,
         "case": record,
@@ -247,11 +257,13 @@ def _case_context(
         "reporting_summaries": reporting_service.summaries(record),
         "submission_options": reporting_service.submission_options(),
         "latest_submission": record.submissions[-1] if record.submissions else None,
-        "latest_collection_job": collection_jobs.latest_for_case(case_id),
+        "latest_collection_job": latest_collection_job,
         "latest_snapshot": latest_snapshot,
         "technical_review": technical_review,
         "snapshots": list(reversed(record.snapshots)),
-        "capabilities": case_service.capabilities(settings),
+        "capabilities": capabilities,
+        "workflow": workflow,
+        "now": now,
         "pilot_notice": True,
     }
 
@@ -351,7 +363,7 @@ def create_case_form(
             },
             status_code=422,
         )
-    return RedirectResponse(url=f"/cases/{record.id}", status_code=303)
+    return RedirectResponse(url=f"/cases/{record.id}#qualification", status_code=303)
 
 
 @app.get("/cases/{case_id}", response_class=HTMLResponse)
@@ -473,7 +485,7 @@ def submit_qualification_form(
             url=f"/cases/{case_id}?qualification_error={encoded_error}#qualification",
             status_code=303,
         )
-    return RedirectResponse(url=f"/cases/{case_id}#qualification", status_code=303)
+    return RedirectResponse(url=f"/cases/{case_id}#reporting", status_code=303)
 
 
 @app.post("/cases/{case_id}/submissions")
@@ -511,10 +523,10 @@ def record_submission_form(
             message = str(exc)
         encoded_error = quote(message, safe="")
         return RedirectResponse(
-            url=f"/cases/{case_id}?submission_error={encoded_error}#record-submission",
+            url=f"/cases/{case_id}?submission_error={encoded_error}#reporting",
             status_code=303,
         )
-    return RedirectResponse(url=f"/cases/{case_id}#record-submission", status_code=303)
+    return RedirectResponse(url=f"/cases/{case_id}#follow-up", status_code=303)
 
 
 @app.post("/cases/{case_id}/collections/dns")
@@ -531,10 +543,10 @@ def start_dns_collection_form(
     except ValueError as exc:
         encoded_error = quote(str(exc), safe="")
         return RedirectResponse(
-            url=f"/cases/{case_id}?collection_error={encoded_error}#collection",
+            url=f"/cases/{case_id}?collection_error={encoded_error}#evidence",
             status_code=303,
         )
-    return RedirectResponse(url=f"/cases/{case_id}#collection", status_code=303)
+    return RedirectResponse(url=f"/cases/{case_id}#evidence", status_code=303)
 
 
 def _start_dns_collection(case_id: str, *, confirmed_authorized: bool):  # type: ignore[no-untyped-def]
@@ -559,10 +571,10 @@ def start_passive_collection_form(
     except ValueError as exc:
         encoded_error = quote(str(exc), safe="")
         return RedirectResponse(
-            url=f"/cases/{case_id}?collection_error={encoded_error}#collection",
+            url=f"/cases/{case_id}?collection_error={encoded_error}#evidence",
             status_code=303,
         )
-    return RedirectResponse(url=f"/cases/{case_id}#collection", status_code=303)
+    return RedirectResponse(url=f"/cases/{case_id}#evidence", status_code=303)
 
 
 def _start_passive_collection(
@@ -589,7 +601,7 @@ def update_action_form(
         raise HTTPException(status_code=404, detail="Case not found") from exc
     except ActionNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Action not found") from exc
-    return RedirectResponse(url=f"/cases/{case_id}#actions", status_code=303)
+    return RedirectResponse(url=f"/cases/{case_id}#follow-up", status_code=303)
 
 
 @app.post("/api/v1/cases/preview")
