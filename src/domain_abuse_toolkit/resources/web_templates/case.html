@@ -126,18 +126,19 @@
       </div>
       <dl class="definition-list">
         <div><dt>Network</dt><dd>{{ "Enabled" if capabilities.network_collection else "Disabled" }}</dd></div>
+        <div><dt>RDAP registration</dt><dd>{{ "Enabled" if capabilities.rdap_collection else "Disabled" }}</dd></div>
         <div><dt>Browser capture</dt><dd>{{ "Enabled" if capabilities.screenshots else "Disabled" }}</dd></div>
         <div><dt>External APIs</dt><dd>{{ "Enabled" if capabilities.external_apis else "Disabled" }}</dd></div>
         <div><dt>LLM</dt><dd>{{ "Enabled" if capabilities.llm else "Disabled" }}</dd></div>
       </dl>
-      <p class="callout">Opening this case never contacts the target. An authorized passive job collects DNS, a bounded HTTP response and the TLS leaf certificate.</p>
+      <p class="callout">Opening this case never contacts the target. An authorized passive job collects DNS, a bounded HTTP response, the TLS leaf certificate{% if capabilities.rdap_collection %} and authoritative RDAP registration data{% endif %}.</p>
       {% if collection_error %}<div class="alert" role="alert">{{ collection_error }}</div>{% endif %}
       {% if capabilities.network_collection %}
         <form action="/cases/{{ case.id }}/collections/passive" method="post" class="collection-form">
           <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
           <label class="confirmation-check">
             <input type="checkbox" name="confirmed_authorized" value="true" required>
-            <span>I am authorized to perform passive DNS and bounded HTTP/TLS collection for this target.</span>
+            <span>I am authorized to perform passive DNS, bounded HTTP/TLS and RDAP collection for this target.</span>
           </label>
           <button class="button button-primary" type="submit"{% if latest_collection_job and latest_collection_job.status in ['queued', 'running'] %} disabled{% endif %}>Start passive evidence collection</button>
         </form>

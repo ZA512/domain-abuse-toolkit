@@ -42,6 +42,12 @@ After the DNS safety gate succeeds, the local worker resolves the current host a
 
 The request sends no cookie, authorization value or browser state, asks for identity encoding and a bounded byte range, and uses `Connection: close`. Only textual, JSON or XML response bodies are retained, up to the configured limit; attachment and other content types are not downloaded. Human-facing observations use an explicit response-header allowlist that excludes `Set-Cookie`. The TLS handshake uses TLS 1.2 or later for evidence capture, stores the leaf DER certificate, and records fingerprint, subject, issuer, SAN, validity, protocol and cipher. Certificate trust validation is deliberately reported as not performed; the collected certificate is evidence, not a trust decision.
 
+### Current RDAP implementation
+
+The collector derives the registrable domain from the normalized case target, downloads the official IANA DNS bootstrap registry over certificate-validated HTTPS, and selects the HTTPS service published for the target TLD. The bootstrap and authoritative domain response are size-bounded, parsed as JSON only, cached for a bounded period, and preserved as immutable evidence. Every bootstrap or registry address and every redirect must resolve exclusively to public IP addresses; HTTPS certificate validation remains enabled for these trusted service endpoints.
+
+Only operational registration fields are normalized for the interface: domain identifiers, statuses, events, nameservers, DNSSEC state, registrar identifiers/name, and an abuse email explicitly published by an entity with the `abuse` role. Registrant contact data is not normalized or displayed. The raw authoritative response may nevertheless contain personal data published by a registry, so case access, retention, and evidence exports must remain restricted and proportionate.
+
 ## Browser isolation
 
 The browser worker must not run inside the web application process. It requires:

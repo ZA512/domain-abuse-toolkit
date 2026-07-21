@@ -61,6 +61,7 @@ class CollectionJobService:
         case_service: CaseService,
         dns_collector: PassiveCollector,
         web_collector: PassiveWebCollector | None = None,
+        rdap_collector: PassiveCollector | None = None,
         *,
         max_workers: int = 2,
         max_pending_jobs: int = 10,
@@ -68,6 +69,7 @@ class CollectionJobService:
         self.case_service = case_service
         self.dns_collector = dns_collector
         self.web_collector = web_collector
+        self.rdap_collector = rdap_collector
         self._executor = ThreadPoolExecutor(
             max_workers=max_workers, thread_name_prefix="dat-collector"
         )
@@ -196,6 +198,22 @@ class CollectionJobService:
                 )
             results.extend(web_output.results)
             artifacts.extend(web_output.artifacts)
+
+        if self.rdap_collector is not None:
+            try:
+                rdap_output = self.rdap_collector.collect(target, job.snapshot_id)
+            except Exception:  # collector boundary deliberately hides endpoint details
+                rdap_output = CollectorOutput(
+                    result=self._failed_result(
+                        "rdap",
+                        self.rdap_collector.version,
+                        job.started_at,
+                        "The RDAP collector stopped unexpectedly.",
+                    ),
+                    artifacts=[],
+                )
+            results.append(rdap_output.result)
+            artifacts.extend(rdap_output.artifacts)
         self._persist(job_id, results, artifacts)
 
     def _persist(

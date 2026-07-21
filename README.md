@@ -34,10 +34,10 @@ This foundation currently includes:
 - deterministic evidence ZIP export with an included offline SHA-256 verifier;
 - versioned official reporting-channel catalogue and bilingual form-ready summaries;
 - operator-confirmed submission records with external references and criticality-based follow-up dates;
-- an explicit passive DNS/HTTP/TLS job with validated-IP connections, redirect revalidation, bounded bodies, raw certificates and normalized observations;
+- an explicit passive DNS/HTTP/TLS/RDAP job with validated-IP connections, redirect revalidation, bounded bodies, raw certificates, authoritative registration data and normalized observations;
 - unit tests for the first safety-critical behaviors.
 
-Passive DNS/HTTP/TLS collection is implemented but remains disabled by default. RDAP collection, browser capture, shared database persistence, scheduling, Microsoft Graph, and optional LLM integration remain feature-gated until implemented and reviewed.
+Passive DNS/HTTP/TLS/RDAP collection is implemented but remains disabled by default. Browser capture, shared database persistence, scheduling, Microsoft Graph, and optional LLM integration remain feature-gated until implemented and reviewed.
 
 ## Quick start
 
@@ -86,7 +86,7 @@ pytest
 
 - The service binds to localhost by default.
 - Network collection, screenshots, external APIs, LLMs, and Microsoft Graph are off by default.
-- The opt-in network mode performs bounded DNS and one controlled HTTP/TLS navigation; every redirect is revalidated before connection.
+- The opt-in network mode performs bounded DNS, one controlled HTTP/TLS navigation, and authoritative RDAP discovery through IANA; every redirect is revalidated before connection.
 - Private, loopback, link-local, multicast, reserved, and unspecified IP targets are rejected.
 - Redirect targets must be revalidated before a collector follows them.
 - Evidence and private directories are ignored by Git.

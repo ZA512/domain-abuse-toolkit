@@ -99,6 +99,7 @@ export DAT_DATA_DIR="`$HOME/.local/share/domain-abuse-toolkit/case-data"
 export DAT_PORT=$Port
 export DAT_PUBLIC_BASE_URL="http://127.0.0.1:$Port"
 export DAT_ENABLE_NETWORK_COLLECTION=$networkCollectionValue
+export DAT_ENABLE_RDAP_COLLECTION=$networkCollectionValue
 export DAT_ENABLE_SCREENSHOTS=false
 mkdir -p "`$HOME/.local/share/domain-abuse-toolkit"
 echo "`$`$" > "`$HOME/.local/share/domain-abuse-toolkit/server-$Port.pid"
@@ -143,7 +144,7 @@ if (-not $health) {
 
 Write-Host "Pret : $applicationUrl" -ForegroundColor Green
 if ($EnableNetworkCollection) {
-    Write-Host 'Collecte passive DNS/HTTP/TLS activee : aucun contact sans clic et confirmation.' -ForegroundColor Yellow
+    Write-Host 'Collecte passive DNS/HTTP/TLS/RDAP activee : aucun contact sans clic et confirmation.' -ForegroundColor Yellow
 }
 else {
     Write-Host 'Le mode test ne contacte aucun site cible.' -ForegroundColor Cyan

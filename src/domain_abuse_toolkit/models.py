@@ -267,6 +267,7 @@ class CaseRecord(BaseModel):
 
 class CapabilityStatus(BaseModel):
     network_collection: bool
+    rdap_collection: bool
     screenshots: bool
     external_apis: bool
     llm: bool

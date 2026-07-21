@@ -36,6 +36,7 @@ _SAFE_RESPONSE_HEADERS = {
     "cache-control",
     "content-language",
     "content-length",
+    "content-range",
     "content-encoding",
     "content-type",
     "date",
@@ -49,6 +50,7 @@ _SAFE_RESPONSE_HEADERS = {
 _TEXTUAL_MEDIA_TYPES = {
     "application/json",
     "application/ld+json",
+    "application/rdap+json",
     "application/xhtml+xml",
     "application/xml",
 }
@@ -145,7 +147,19 @@ class DirectHttpClient:
         connect_timeout: float,
         read_timeout: float,
         max_body_bytes: int,
+        accept: str | None = None,
+        verify_tls: bool = False,
+        request_range: bool = True,
     ) -> HttpExchange:
+        accept_header = accept or (
+            "text/html,application/xhtml+xml,application/json,"
+            "text/plain;q=0.9,*/*;q=0.1"
+        )
+        if any(ord(character) < 32 or ord(character) == 127 for character in accept_header):
+            raise WebTransportError(
+                "http_request_invalid", "The HTTP Accept header was invalid."
+            )
+        range_header = f"Range: bytes=0-{max_body_bytes - 1}\r\n" if request_range else ""
         port = target.port or (443 if target.scheme == "https" else 80)
         raw_socket: socket.socket | None = None
         connection: socket.socket | ssl.SSLSocket | None = None
@@ -155,9 +169,14 @@ class DirectHttpClient:
             raw_socket.settimeout(read_timeout)
             connection = raw_socket
             if target.scheme == "https":
-                context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-                context.check_hostname = False
-                context.verify_mode = ssl.CERT_NONE
+                context = (
+                    ssl.create_default_context()
+                    if verify_tls
+                    else ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                )
+                if not verify_tls:
+                    context.check_hostname = False
+                    context.verify_mode = ssl.CERT_NONE
                 context.minimum_version = ssl.TLSVersion.TLSv1_2
                 connection = context.wrap_socket(raw_socket, server_hostname=target.host)
                 certificate_der = connection.getpeercert(binary_form=True)
@@ -189,10 +208,9 @@ class DirectHttpClient:
                 f"GET {request_target} HTTP/1.1\r\n"
                 f"Host: {host_header}\r\n"
                 f"User-Agent: {self.user_agent}\r\n"
-                "Accept: text/html,application/xhtml+xml,application/json,"
-                "text/plain;q=0.9,*/*;q=0.1\r\n"
+                f"Accept: {accept_header}\r\n"
                 "Accept-Encoding: identity\r\n"
-                f"Range: bytes=0-{max_body_bytes - 1}\r\n"
+                f"{range_header}"
                 "Connection: close\r\n\r\n"
             ).encode("ascii")
             connection.sendall(request_bytes)

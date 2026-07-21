@@ -173,6 +173,13 @@ class BlockingCollector(SuccessfulCollector):
         return super().collect(target, snapshot_id)
 
 
+class FailedDnsCollector(SuccessfulCollector):
+    def collect(self, target, snapshot_id: str) -> CollectorOutput:  # type: ignore[no-untyped-def]
+        output = super().collect(target, snapshot_id)
+        output.result.status = CollectorStatus.FAILED
+        return output
+
+
 class SuccessfulWebCollector:
     version = "test"
 
@@ -195,6 +202,23 @@ class SuccessfulWebCollector:
                     finished_at=now,
                 ),
             ],
+            artifacts=[],
+        )
+
+
+class SuccessfulRdapCollector:
+    version = "test"
+
+    def collect(self, _target, _snapshot_id: str) -> CollectorOutput:  # type: ignore[no-untyped-def]
+        now = datetime.now(UTC)
+        return CollectorOutput(
+            result=CollectorResult(
+                collector="rdap",
+                version=self.version,
+                status=CollectorStatus.COMPLETE,
+                started_at=now,
+                finished_at=now,
+            ),
             artifacts=[],
         )
 
@@ -250,7 +274,7 @@ def test_collection_queue_has_a_global_pending_limit(tmp_path) -> None:  # type:
     assert jobs.wait(first.id).status == CollectorStatus.COMPLETE
 
 
-def test_full_passive_job_combines_dns_http_and_tls_results(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_full_passive_job_combines_dns_http_tls_and_rdap_results(tmp_path) -> None:  # type: ignore[no-untyped-def]
     service = CaseService(EvidenceStore(tmp_path), DraftService())
     case = service.create(
         CaseCreate(
@@ -260,7 +284,10 @@ def test_full_passive_job_combines_dns_http_and_tls_results(tmp_path) -> None:  
         )
     )
     jobs = CollectionJobService(
-        service, SuccessfulCollector(), SuccessfulWebCollector()
+        service,
+        SuccessfulCollector(),
+        SuccessfulWebCollector(),
+        SuccessfulRdapCollector(),
     )
 
     queued = jobs.start_passive(case.id)
@@ -271,4 +298,33 @@ def test_full_passive_job_combines_dns_http_and_tls_results(tmp_path) -> None:  
         "dns",
         "http",
         "tls",
+        "rdap",
+    ]
+
+
+def test_rdap_still_runs_when_target_dns_safety_gate_fails(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    service = CaseService(EvidenceStore(tmp_path), DraftService())
+    case = service.create(
+        CaseCreate(
+            target="https://suspended.example.net/",
+            brand="Example Brand",
+            legit_url="https://www.example.com/",
+        )
+    )
+    jobs = CollectionJobService(
+        service,
+        FailedDnsCollector(),
+        SuccessfulWebCollector(),
+        SuccessfulRdapCollector(),
+    )
+
+    finished = jobs.wait(jobs.start_passive(case.id).id)
+
+    assert finished.status == CollectorStatus.PARTIAL
+    results = case.snapshots[0].results
+    assert [result.status for result in results] == [
+        CollectorStatus.FAILED,
+        CollectorStatus.SKIPPED,
+        CollectorStatus.SKIPPED,
+        CollectorStatus.COMPLETE,
     ]

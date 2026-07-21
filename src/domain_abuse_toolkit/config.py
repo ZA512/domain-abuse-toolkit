@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     http_total_timeout_seconds: float = Field(default=30.0, ge=2, le=120)
     http_max_redirects: int = Field(default=5, ge=0, le=10)
     http_max_body_bytes: int = Field(default=256 * 1024, ge=1024, le=1024 * 1024)
+    enable_rdap_collection: bool = False
+    rdap_max_response_bytes: int = Field(
+        default=1024 * 1024, ge=64 * 1024, le=4 * 1024 * 1024
+    )
+    rdap_bootstrap_cache_seconds: int = Field(
+        default=24 * 60 * 60, ge=300, le=7 * 24 * 60 * 60
+    )
     enable_screenshots: bool = False
     enable_external_apis: bool = False
     enable_llm: bool = False

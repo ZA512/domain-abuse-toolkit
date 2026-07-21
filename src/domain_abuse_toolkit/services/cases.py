@@ -513,6 +513,7 @@ class CaseService:
     def capabilities(settings: Settings) -> CapabilityStatus:
         return CapabilityStatus(
             network_collection=settings.enable_network_collection,
+            rdap_collection=settings.enable_rdap_collection,
             screenshots=settings.enable_screenshots,
             external_apis=settings.enable_external_apis,
             llm=settings.enable_llm,

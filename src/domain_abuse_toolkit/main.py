@@ -44,6 +44,7 @@ from domain_abuse_toolkit.services.collectors import DnsCollector
 from domain_abuse_toolkit.services.drafts import DraftService
 from domain_abuse_toolkit.services.evidence import EvidenceStore, EvidenceStoreError
 from domain_abuse_toolkit.services.exports import EvidenceExportService
+from domain_abuse_toolkit.services.rdap_collector import RdapCollector
 from domain_abuse_toolkit.services.reporting import (
     ReportingCatalogueError,
     ReportingService,
@@ -80,6 +81,22 @@ collection_jobs = CollectionJobService(
         total_timeout_seconds=settings.http_total_timeout_seconds,
         max_redirects=settings.http_max_redirects,
         max_body_bytes=settings.http_max_body_bytes,
+    ),
+    (
+        RdapCollector(
+            address_resolver=BoundedAddressResolver(
+                timeout_seconds=settings.dns_timeout_seconds,
+                lifetime_seconds=settings.dns_lifetime_seconds,
+            ),
+            connect_timeout_seconds=settings.http_connect_timeout_seconds,
+            read_timeout_seconds=settings.http_read_timeout_seconds,
+            total_timeout_seconds=settings.http_total_timeout_seconds,
+            max_redirects=settings.http_max_redirects,
+            max_response_bytes=settings.rdap_max_response_bytes,
+            bootstrap_cache_seconds=settings.rdap_bootstrap_cache_seconds,
+        )
+        if settings.enable_rdap_collection
+        else None
     ),
     max_pending_jobs=settings.max_pending_collection_jobs,
 )

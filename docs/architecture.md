@@ -59,7 +59,7 @@ Collectors implement a common result contract:
 
 Each redirect or secondary target passes through the same network policy as the initial target.
 
-The local pilot now executes bounded DNS/HTTP/TLS jobs in a small in-process worker pool after an explicit operator action. The web transport connects directly to a validated public IP while preserving Host/SNI and repeats resolution and policy checks for every redirect. Raw DNS messages, bounded textual bodies, leaf certificates and the final snapshot event are immutable evidence. This executor is intentionally a pilot mechanism; a shared deployment must move jobs to the isolated queue/worker boundary shown above.
+The local pilot now executes bounded DNS/HTTP/TLS/RDAP jobs in a small in-process worker pool after an explicit operator action. The web transport connects directly to a validated public IP while preserving Host/SNI and repeats resolution and policy checks for every redirect. RDAP service discovery uses the official IANA bootstrap over validated HTTPS and keeps only operational registration fields in the interface. Raw DNS messages, bounded textual bodies, leaf certificates, RDAP JSON and the final snapshot event are immutable evidence. This executor is intentionally a pilot mechanism; a shared deployment must move jobs to the isolated queue/worker boundary shown above.
 
 ### Browser worker
 
