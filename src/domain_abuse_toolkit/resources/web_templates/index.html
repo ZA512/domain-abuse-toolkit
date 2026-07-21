@@ -100,17 +100,21 @@
       <div class="case-summary" aria-label="Case summary">
         <span><strong>{{ case_counts.needs_validation }}</strong> need validation</span>
         <span><strong>{{ case_counts.critical }}</strong> critical</span>
+        <span><strong>{{ case_counts.technical_due }}</strong> technical checks due</span>
       </div>
       {% for case in cases %}
+        {% set review = case_review_status[case.id] %}
         <a class="case-row" href="/cases/{{ case.id }}">
           <span>
             <strong>{{ case.brand }} · {{ case.target.registrable_domain }}</strong>
             <small>{{ case.id }} · {{ case.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</small>
             <small class="break-anywhere">{{ case.target.normalized_url }}</small>
+            {% if review %}<small class="{{ 'overdue-text' if review.overdue else '' }}">Technical check {{ 'due' if review.overdue else 'scheduled' }} · {{ review.due_at.strftime('%Y-%m-%d %H:%M') }} UTC</small>{% endif %}
           </span>
           <span class="case-row-badges">
             <span class="badge badge-high">{{ case.criticality_proposed }}</span>
             <span class="badge">{{ case.state }}</span>
+            {% if review and review.overdue %}<span class="badge badge-high">Check due</span>{% endif %}
           </span>
         </a>
       {% endfor %}

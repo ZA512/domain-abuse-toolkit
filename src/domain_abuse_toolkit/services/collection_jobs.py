@@ -18,6 +18,10 @@ from domain_abuse_toolkit.models import (
 from domain_abuse_toolkit.services.cases import CaseService
 from domain_abuse_toolkit.services.collectors import CollectorBatchOutput, CollectorOutput
 from domain_abuse_toolkit.services.evidence import PendingArtifact
+from domain_abuse_toolkit.services.snapshot_comparison import (
+    compare_snapshots,
+    next_check_due_at,
+)
 
 
 class PassiveCollector(Protocol):
@@ -267,6 +271,9 @@ class CollectionJobService:
         started_at = min(result.started_at for result in results)
         finished_at = max(result.finished_at for result in results)
         status = self._snapshot_status(results)
+        record = self.case_service.get(job.case_id)
+        previous = record.snapshots[-1] if record.snapshots else None
+        criticality = record.criticality_confirmed or record.criticality_proposed
         snapshot = SnapshotEvent(
             id=job.snapshot_id,
             case_id=job.case_id,
@@ -275,6 +282,9 @@ class CollectionJobService:
             finished_at=finished_at,
             results=results,
             occurred_at=finished_at,
+            previous_snapshot_id=previous.id if previous else None,
+            changes=compare_snapshots(previous, results),
+            next_check_due_at=next_check_due_at(finished_at, criticality),
         )
         try:
             self.case_service.record_snapshot(snapshot, artifacts)

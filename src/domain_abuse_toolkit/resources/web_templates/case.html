@@ -17,6 +17,7 @@
       <span class="badge badge-high">Proposed: {{ case.criticality_proposed }}</span>
       {% if case.criticality_confirmed %}<span class="badge badge-safe">Confirmed: {{ case.criticality_confirmed }}</span>{% endif %}
       <span class="badge">{{ case.state }}</span>
+      {% if technical_review %}<span class="badge {{ 'badge-high' if technical_review.overdue else 'badge-safe' }}">Technical check {{ 'due' if technical_review.overdue else 'scheduled' }}</span>{% endif %}
     </div>
   </section>
 
@@ -148,6 +149,15 @@
       {% if latest_collection_job %}
         <p class="job-status"><strong>Latest job: {{ latest_collection_job.status }}</strong><small>{{ latest_collection_job.id }}</small></p>
       {% endif %}
+      {% if technical_review %}
+        <div class="review-due {{ 'review-overdue' if technical_review.overdue else '' }}">
+          <strong>{{ 'Technical review due now' if technical_review.overdue else 'Next technical review' }}</strong>
+          <span>{{ technical_review.due_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
+          <small>A new collection starts only after the authorization checkbox and button above.</small>
+        </div>
+      {% elif not latest_snapshot %}
+        <p class="collection-disabled">The first technical review will be scheduled after the first completed collection.</p>
+      {% endif %}
     </aside>
   </div>
 
@@ -164,23 +174,50 @@
               <div><strong>{{ snapshot.id }}</strong><small>{{ snapshot.finished_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</small></div>
               <span class="badge {{ 'badge-safe' if snapshot.status == 'complete' else 'badge-high' }}">{{ snapshot.status }}</span>
             </div>
-            {% for result in snapshot.results %}
-              <p>{{ result.collector|upper }} collector {{ result.version }} · {{ result.observations|length }} observations · {{ result.artifacts|length }} raw responses</p>
-              {% if result.observations %}
-                <div class="dns-records">
-                  {% for observation in result.observations %}
-                    <div><span>{{ observation.record_type or observation.category }}</span><code class="break-anywhere">{{ observation.name }} · {{ observation.value }}</code>{% if observation.ttl is not none %}<small>TTL {{ observation.ttl }}</small>{% endif %}</div>
-                  {% endfor %}
-                </div>
-              {% endif %}
-              {% for error in result.errors %}<div class="alert" role="alert"><strong>{{ error.code }}</strong> · {{ error.message }}</div>{% endfor %}
-              {% if result.collector == "screenshot" and result.artifacts %}
-                <figure class="capture-preview">
-                  <img src="/cases/{{ case.id }}/snapshots/{{ snapshot.id }}/capture.png" alt="Offline static rendering captured for snapshot {{ snapshot.id }}" loading="lazy">
-                  <figcaption>Derived offline rendering · JavaScript disabled · network blocked</figcaption>
-                </figure>
-              {% endif %}
-            {% endfor %}
+            {% if snapshot.next_check_due_at %}<p class="snapshot-review-date">Next operator check {{ snapshot.next_check_due_at.strftime('%Y-%m-%d %H:%M') }} UTC</p>{% endif %}
+            {% if snapshot.previous_snapshot_id %}
+              <div class="change-summary">
+                <strong>{{ snapshot.changes|length }} change{{ 's' if snapshot.changes|length != 1 else '' }} since {{ snapshot.previous_snapshot_id }}</strong>
+                {% if snapshot.changes %}
+                  <div class="change-list">
+                    {% for change in snapshot.changes %}
+                      <article class="change-row {{ 'change-important' if change.important else '' }}">
+                        <span class="change-kind">{{ change.change_type }}</span>
+                        <div>
+                          <strong>{{ change.collector|upper }} · {{ change.record_type or change.name }}</strong>
+                          {% if change.record_type %}<small>{{ change.name }}</small>{% endif %}
+                          <code class="break-anywhere">{{ change.before|join(', ') if change.before else '—' }} → {{ change.after|join(', ') if change.after else '—' }}</code>
+                        </div>
+                      </article>
+                    {% endfor %}
+                  </div>
+                {% else %}
+                  <p class="no-change">No normalized technical change detected.</p>
+                {% endif %}
+              </div>
+            {% else %}
+              <p class="no-change">Baseline snapshot — future collections will be compared with this one.</p>
+            {% endif %}
+            <details class="snapshot-raw">
+              <summary>Show collector details and unchanged observations</summary>
+              {% for result in snapshot.results %}
+                <p>{{ result.collector|upper }} collector {{ result.version }} · {{ result.observations|length }} observations · {{ result.artifacts|length }} raw responses</p>
+                {% if result.observations %}
+                  <div class="dns-records">
+                    {% for observation in result.observations %}
+                      <div><span>{{ observation.record_type or observation.category }}</span><code class="break-anywhere">{{ observation.name }} · {{ observation.value }}</code>{% if observation.ttl is not none %}<small>TTL {{ observation.ttl }}</small>{% endif %}</div>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+                {% for error in result.errors %}<div class="alert" role="alert"><strong>{{ error.code }}</strong> · {{ error.message }}</div>{% endfor %}
+                {% if result.collector == "screenshot" and result.artifacts %}
+                  <figure class="capture-preview">
+                    <img src="/cases/{{ case.id }}/snapshots/{{ snapshot.id }}/capture.png" alt="Offline static rendering captured for snapshot {{ snapshot.id }}" loading="lazy">
+                    <figcaption>Derived offline rendering · JavaScript disabled · network blocked</figcaption>
+                  </figure>
+                {% endif %}
+              {% endfor %}
+            </details>
           </article>
         {% endfor %}
       </div>

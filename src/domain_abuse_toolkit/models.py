@@ -219,6 +219,17 @@ class CollectorResult(BaseModel):
     errors: list[CollectorError] = Field(default_factory=list)
 
 
+class SnapshotChange(BaseModel):
+    collector: str
+    category: str
+    name: str
+    record_type: str | None = None
+    change_type: Literal["added", "removed", "changed"]
+    before: list[str] = Field(default_factory=list)
+    after: list[str] = Field(default_factory=list)
+    important: bool = True
+
+
 class SnapshotEvent(BaseModel):
     id: str
     case_id: str
@@ -229,6 +240,9 @@ class SnapshotEvent(BaseModel):
     finished_at: datetime
     results: list[CollectorResult]
     occurred_at: datetime
+    previous_snapshot_id: str | None = None
+    changes: list[SnapshotChange] = Field(default_factory=list)
+    next_check_due_at: datetime | None = None
 
 
 class Draft(BaseModel):

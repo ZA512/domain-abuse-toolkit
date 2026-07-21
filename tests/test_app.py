@@ -1,14 +1,19 @@
 import importlib
 import io
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from zipfile import ZipFile
 
 import pytest
 from fastapi.testclient import TestClient
 
 from domain_abuse_toolkit.config import get_settings
-from domain_abuse_toolkit.models import CollectorResult, CollectorStatus, SnapshotEvent
+from domain_abuse_toolkit.models import (
+    CollectorResult,
+    CollectorStatus,
+    SnapshotChange,
+    SnapshotEvent,
+)
 from domain_abuse_toolkit.services.evidence import PendingArtifact
 
 
@@ -142,6 +147,63 @@ def test_verified_capture_is_displayed_inline_and_tampering_is_rejected(
     evidence_root = main_module.case_service.evidence_store.root
     (evidence_root / created["id"] / capture_path).write_bytes(b"tampered")
     assert client.get(route).status_code == 409
+
+
+def test_snapshot_changes_and_next_review_are_rendered_first(client: TestClient) -> None:
+    created = client.post(
+        "/api/v1/cases",
+        json={
+            "target": "https://example.net/",
+            "brand": "Example Brand",
+            "legit_url": "https://www.example.com/",
+        },
+    ).json()
+    main_module = importlib.import_module("domain_abuse_toolkit.main")
+    now = datetime.now(UTC)
+    main_module.case_service.record_snapshot(
+        SnapshotEvent(
+            id="SNP-BASELINE",
+            case_id=created["id"],
+            status=CollectorStatus.COMPLETE,
+            started_at=now,
+            finished_at=now,
+            occurred_at=now,
+            results=[],
+        ),
+        [],
+    )
+    main_module.case_service.record_snapshot(
+        SnapshotEvent(
+            id="SNP-CURRENT",
+            case_id=created["id"],
+            status=CollectorStatus.COMPLETE,
+            started_at=now,
+            finished_at=now,
+            occurred_at=now,
+            results=[],
+            previous_snapshot_id="SNP-BASELINE",
+            changes=[
+                SnapshotChange(
+                    collector="http",
+                    category="http",
+                    name="hop_0.status",
+                    change_type="changed",
+                    before=["200"],
+                    after=["404"],
+                )
+            ],
+            next_check_due_at=now + timedelta(hours=72),
+        ),
+        [],
+    )
+
+    detail = client.get(f"/cases/{created['id']}")
+
+    assert detail.status_code == 200
+    assert "1 change since SNP-BASELINE" in detail.text
+    assert "200" in detail.text and "404" in detail.text
+    assert "Next technical review" in detail.text
+    assert "Show collector details and unchanged observations" in detail.text
 
 
 def test_html_forms_require_a_valid_local_csrf_token(client: TestClient) -> None:

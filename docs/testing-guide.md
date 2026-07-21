@@ -74,7 +74,8 @@ Vérifier ensuite :
 - qu’une adresse saisie dans **Email recipient** est ajoutée au brouillon ouvert dans le client mail.
 - qu’une soumission réellement effectuée peut être confirmée dans **Record a completed submission** avec sa référence externe ;
 - que le dossier passe à `waiting_external` et affiche automatiquement la prochaine échéance de relance.
-- en mode réseau volontaire, qu’un snapshot affiche les résultats DNS, HTTP, TLS, RDAP et SCREENSHOT, montre la capture statique, et ajoute tous ces éléments au ZIP de preuve.
+- en mode réseau volontaire, qu’un snapshot affiche les résultats DNS, HTTP, TLS, RDAP et SCREENSHOT, montre la capture statique, et ajoute tous ces éléments au ZIP de preuve ;
+- qu’après une deuxième collecte, les changements normalisés apparaissent avant les détails bruts et que la prochaine date de contrôle est visible dans le dossier et sur l’accueil.
 
 Après extraction complète du ZIP, ouvrir PowerShell dans le dossier du dossier exporté puis lancer :
 
@@ -92,7 +93,7 @@ La fenêtre doit terminer par :
 
 ```text
 All checks passed!
-71 passed
+75 passed
 SUCCES - tous les controles passent.
 ```
 

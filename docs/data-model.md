@@ -29,7 +29,11 @@
 
 ### Snapshot
 
-One collection run for a case. It records trigger, policy version, tool version, start/end, status, and the set of collector results. Snapshots are append-only.
+One collection run for a case. It records trigger, policy version, tool version, start/end, status, the set of collector results, its previous snapshot, normalized changes, and the next operator review date. Snapshots are append-only. The local pilot calculates a review date from criticality but does not launch collection automatically.
+
+### Snapshot change
+
+An immutable grouped difference between two successive snapshots. It records collector, category, field or record type, previous values, current values, change type, and whether the field is operationally important. Observation ordering and DNS TTL drift alone do not create a change.
 
 ### Observation
 

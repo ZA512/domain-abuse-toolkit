@@ -223,6 +223,13 @@ def _case_context(
         artifact_count = 0
         if str(exc) not in integrity_errors:
             integrity_errors.append(str(exc))
+    latest_snapshot = record.snapshots[-1] if record.snapshots else None
+    technical_review = None
+    if latest_snapshot and latest_snapshot.next_check_due_at:
+        technical_review = {
+            "due_at": latest_snapshot.next_check_due_at,
+            "overdue": latest_snapshot.next_check_due_at <= now,
+        }
     return {
         "request": request,
         "case": record,
@@ -241,17 +248,33 @@ def _case_context(
         "submission_options": reporting_service.submission_options(),
         "latest_submission": record.submissions[-1] if record.submissions else None,
         "latest_collection_job": collection_jobs.latest_for_case(case_id),
+        "latest_snapshot": latest_snapshot,
+        "technical_review": technical_review,
         "snapshots": list(reversed(record.snapshots)),
         "capabilities": case_service.capabilities(settings),
         "pilot_notice": True,
     }
 
 
+def _technical_review_status(case: object, now: datetime) -> dict[str, object] | None:
+    snapshots = case.snapshots
+    if not snapshots or snapshots[-1].next_check_due_at is None:
+        return None
+    due_at = snapshots[-1].next_check_due_at
+    return {"due_at": due_at, "overdue": due_at <= now}
+
+
 def _case_counts(cases: list[object]) -> dict[str, int]:
+    now = datetime.now(UTC)
     return {
         "total": len(cases),
         "critical": sum(case.criticality_proposed.value == "critical" for case in cases),
         "needs_validation": sum(case.state.value == "needs_validation" for case in cases),
+        "technical_due": sum(
+            bool(status and status["overdue"])
+            for case in cases
+            if (status := _technical_review_status(case, now)) is not None
+        ),
     }
 
 
@@ -263,12 +286,16 @@ def health() -> dict[str, str]:
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):  # type: ignore[no-untyped-def]
     cases = case_service.list()
+    now = datetime.now(UTC)
     return templates.TemplateResponse(
         request=request,
         name="index.html",
         context={
             "request": request,
             "cases": cases,
+            "case_review_status": {
+                case.id: _technical_review_status(case, now) for case in cases
+            },
             "case_counts": _case_counts(cases),
             "capabilities": case_service.capabilities(settings),
             "load_warnings": case_service.load_warnings,
@@ -305,12 +332,16 @@ def create_case_form(
         record = case_service.create(intake)
     except TargetValidationError as exc:
         cases = case_service.list()
+        now = datetime.now(UTC)
         return templates.TemplateResponse(
             request=request,
             name="index.html",
             context={
                 "request": request,
                 "cases": cases,
+                "case_review_status": {
+                    case.id: _technical_review_status(case, now) for case in cases
+                },
                 "case_counts": _case_counts(cases),
                 "capabilities": case_service.capabilities(settings),
                 "load_warnings": case_service.load_warnings,

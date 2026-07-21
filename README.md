@@ -36,9 +36,10 @@ This foundation currently includes:
 - operator-confirmed submission records with external references and criticality-based follow-up dates;
 - an explicit passive DNS/HTTP/TLS/RDAP job with validated-IP connections, redirect revalidation, bounded bodies, raw certificates, authoritative registration data and normalized observations;
 - a Docker-isolated offline desktop rendering of the bounded HTML evidence, with JavaScript and all container networking disabled;
+- automatic normalized diffs between successive snapshots and criticality-based dates for the next operator-triggered technical review;
 - unit tests for the first safety-critical behaviors.
 
-Passive DNS/HTTP/TLS/RDAP collection and offline static rendering are implemented but remain disabled by default. Shared database persistence, scheduling, Microsoft Graph, and optional LLM integration remain feature-gated until implemented and reviewed.
+Passive DNS/HTTP/TLS/RDAP collection and offline static rendering are implemented but remain disabled by default. Review dates are calculated and surfaced locally, but never trigger a network request automatically. Shared database persistence, notification scheduling, Microsoft Graph, and optional LLM integration remain feature-gated until implemented and reviewed.
 
 ## Quick start
 

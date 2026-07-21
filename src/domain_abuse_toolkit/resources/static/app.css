@@ -120,12 +120,27 @@ summary { cursor: pointer; font-weight: 750; }
 .collection-disabled { color: var(--muted); font-size: 0.88rem; }
 .job-status { display: grid; gap: 3px; margin-bottom: 0; }
 .job-status small { color: var(--muted); overflow-wrap: anywhere; }
+.review-due { display: grid; gap: 4px; margin-top: 16px; padding: 13px 14px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-dark); }
+.review-due span { font-weight: 750; }
+.review-due small { color: var(--muted); line-height: 1.4; }
+.review-overdue { background: var(--warning-soft); color: var(--warning); }
 .snapshot-panel { margin: 22px 0; }
 .snapshot-stack { display: grid; gap: 14px; margin-top: 18px; }
 .snapshot-card { padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfb; }
 .snapshot-heading { display: flex; justify-content: space-between; gap: 16px; }
 .snapshot-heading div { display: grid; gap: 4px; }
 .snapshot-heading small { color: var(--muted); }
+.snapshot-review-date { margin: 8px 0 0; color: var(--muted); font-size: 0.82rem; }
+.change-summary { display: grid; gap: 10px; margin-top: 16px; }
+.change-list { display: grid; gap: 7px; }
+.change-row { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: #fff; }
+.change-row > div { display: grid; gap: 3px; min-width: 0; }
+.change-row small { color: var(--muted); }
+.change-row code { display: block; width: fit-content; max-width: 100%; }
+.change-important { border-color: #e2bc78; background: #fffbf2; }
+.change-kind { align-self: start; width: fit-content; padding: 3px 7px; border-radius: 999px; background: #edf0ee; color: var(--muted); font-size: 0.68rem; font-weight: 800; text-transform: uppercase; }
+.no-change { margin: 14px 0 0; color: var(--muted); }
+.snapshot-raw { margin-top: 16px; background: #fff; }
 .dns-records { display: grid; gap: 6px; margin-top: 12px; }
 .dns-records div { display: grid; grid-template-columns: 62px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 8px 10px; border-radius: 8px; background: #edf0ee; }
 .dns-records span { font-weight: 800; color: var(--accent-dark); }

@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 
 from domain_abuse_toolkit.models import CollectorStatus
@@ -46,9 +47,11 @@ def test_screenshot_collector_creates_a_traced_derived_png() -> None:
     assert output.result.artifacts == [
         "10_snapshots/SNP-TEST/capture/desktop.png"
     ]
-    assert {item.name: item.value for item in output.result.observations}["network"] == (
-        "blocked"
-    )
+    observations = {item.name: item.value for item in output.result.observations}
+    assert observations["network"] == "blocked"
+    assert observations["image_sha256"] == hashlib.sha256(
+        b"\x89PNG\r\n\x1a\nsynthetic"
+    ).hexdigest()
     assert output.artifacts[0].classification == "derived"
     assert output.artifacts[0].derived_from == (
         "10_snapshots/SNP-TEST/http/00-body.bin",

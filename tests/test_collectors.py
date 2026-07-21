@@ -1,5 +1,5 @@
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import dns.exception
 import pytest
@@ -173,6 +173,19 @@ class BlockingCollector(SuccessfulCollector):
         return super().collect(target, snapshot_id)
 
 
+class ChangingCollector(SuccessfulCollector):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def collect(self, target, snapshot_id: str) -> CollectorOutput:  # type: ignore[no-untyped-def]
+        output = super().collect(target, snapshot_id)
+        self.calls += 1
+        output.result.observations[0].value = (
+            "8.8.8.8" if self.calls == 1 else "1.1.1.1"
+        )
+        return output
+
+
 class FailedDnsCollector(SuccessfulCollector):
     def collect(self, target, snapshot_id: str) -> CollectorOutput:  # type: ignore[no-untyped-def]
         output = super().collect(target, snapshot_id)
@@ -284,6 +297,37 @@ def test_collection_job_persists_snapshot_and_survives_restart(tmp_path) -> None
     assert restored.snapshots[0].id == queued.snapshot_id
     assert restored.snapshots[0].results[0].observations[0].value == "8.8.8.8"
     assert len(restarted.history(case.id)) == 1
+
+
+def test_collection_job_records_diff_and_next_manual_review(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    service = CaseService(EvidenceStore(tmp_path), DraftService())
+    case = service.create(
+        CaseCreate(
+            target="https://login.example.net/",
+            brand="Example Brand",
+            legit_url="https://www.example.com/",
+        )
+    )
+    jobs = CollectionJobService(service, ChangingCollector())
+
+    first = jobs.wait(jobs.start_dns(case.id).id)
+    second = jobs.wait(jobs.start_dns(case.id).id)
+
+    assert first.status == CollectorStatus.COMPLETE
+    assert second.status == CollectorStatus.COMPLETE
+    latest = case.snapshots[-1]
+    assert latest.previous_snapshot_id == case.snapshots[0].id
+    assert len(latest.changes) == 1
+    assert latest.changes[0].record_type == "A"
+    assert latest.changes[0].before == ["8.8.8.8"]
+    assert latest.changes[0].after == ["1.1.1.1"]
+    assert latest.next_check_due_at == latest.finished_at + timedelta(hours=72)
+
+    restarted = CaseService(EvidenceStore(tmp_path), DraftService())
+    restored = restarted.get(case.id).snapshots[-1]
+    assert restored.previous_snapshot_id == case.snapshots[0].id
+    assert restored.changes[0].after == ["1.1.1.1"]
+    assert restored.next_check_due_at == latest.next_check_due_at
 
 
 def test_collection_queue_has_a_global_pending_limit(tmp_path) -> None:  # type: ignore[no-untyped-def]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import json
 import os
 import shutil
@@ -195,6 +196,11 @@ class ScreenshotCollector:
                     f"{_bounded_int(metadata.get('width'), 1, 10000)}x"
                     f"{_bounded_int(metadata.get('height'), 1, 10000)}"
                 ),
+            ),
+            CollectorObservation(
+                category="capture",
+                name="image_sha256",
+                value=hashlib.sha256(screenshot).hexdigest(),
             ),
         ]
         title = _safe_text(metadata.get("title"), limit=300)
