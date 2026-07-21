@@ -51,7 +51,9 @@ On the current Windows/WSL development setup:
 2. Double-click `RUN_TESTS.cmd` to install development dependencies and run lint plus unit tests.
 3. Stop the application with `STOP_TOOLKIT.cmd`, `Ctrl+C` in the visible server window, or by closing that window.
 
-To test passive technical collection and offline rendering, start Docker Desktop, stop the standard server, then double-click `START_TOOLKIT_NETWORK.cmd` and enter `OUI`. The first run builds a pinned local Playwright capture image and can take several minutes. Opening a case still performs no collection; a separate authorization checkbox and button are required on the case page.
+To test passive technical collection and offline rendering, start Docker Desktop, stop the standard server, then double-click `START_TOOLKIT_NETWORK.cmd` and enter `OUI`. The first run builds a pinned local Playwright capture image and can take several minutes; later starts reuse that immutable local image and avoid unnecessary Docker builds. Opening a case still performs no collection; a separate authorization checkbox and button are required on the case page.
+
+Maintainers can deliberately rebuild the capture image after changing its Dockerfile or worker with `PowerShell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-toolkit.ps1 -EnableNetworkCollection -EnableScreenshots -ForceCaptureImageBuild`. A failed build is retried three times to tolerate transient Docker Desktop metadata locks.
 
 The launchers keep the Python environments and private pilot cases under the WSL user profile, outside this public Git repository. See the [local testing guide](docs/testing-guide.md).
 

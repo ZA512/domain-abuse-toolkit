@@ -41,10 +41,18 @@ Le lancement standard conserve tout accès réseau désactivé. Pour tester le p
 2. arrêter le serveur avec `STOP_TOOLKIT.cmd` ;
 3. double-cliquer sur `START_TOOLKIT_NETWORK.cmd` ;
 4. lire l’avertissement puis entrer `OUI` ;
-5. patienter pendant la première construction de l’image Playwright ;
+5. patienter pendant la première construction de l’image Playwright ; les lancements suivants réutilisent cette image sans relancer Docker Build ;
 6. ouvrir un dossier synthétique autorisé ;
 7. cocher l’autorisation dans **Collection**, puis cliquer sur **Start passive evidence collection** ;
 8. rafraîchir la fiche si le job est encore `queued` ou `running`.
+
+Si le Dockerfile ou le worker de capture a été modifié, un mainteneur peut forcer la reconstruction avec :
+
+```powershell
+PowerShell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-toolkit.ps1 -EnableNetworkCollection -EnableScreenshots -ForceCaptureImageBuild
+```
+
+La construction est retentée trois fois si Docker Desktop verrouille temporairement ses métadonnées.
 
 Cette action interroge les enregistrements DNS `A`, `AAAA`, `CNAME`, `MX`, `NS` et `TXT`, effectue une navigation HTTP/TLS bornée, puis découvre le service RDAP officiel depuis le registre IANA. Le résultat RDAP fournit notamment le registrar, son contact d’abus lorsqu’il est publié, les statuts et les dates du domaine. Le HTML et jusqu’à huit feuilles `text/css` admissibles sont collectés avec les mêmes contrôles d’adresse, puis rendus hors ligne dans un conteneur jetable : réseau désactivé, JavaScript désactivé, système de fichiers en lecture seule, ressources bornées et aucun profil personnel. La capture est marquée comme dérivée du corps HTTP et des CSS utilisés. Aucun formulaire, cookie, script ou téléchargement n’est exécuté. Utiliser exclusivement une cible autorisée ; `example.com` convient pour un essai synthétique.
 

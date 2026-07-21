@@ -9,6 +9,8 @@ param(
 
     [switch]$EnableScreenshots,
 
+    [switch]$ForceCaptureImageBuild,
+
     [ValidateSet('Normal', 'Hidden')]
     [string]$ServerWindowStyle = 'Normal'
 )
@@ -77,6 +79,7 @@ $networkCollectionValue = if ($EnableNetworkCollection) { 'true' } else { 'false
 $screenshotValue = if ($EnableScreenshots) { 'true' } else { 'false' }
 $captureDockerCommand = ''
 if ($EnableScreenshots) {
+    $captureDockerImage = 'domain-abuse-toolkit-capture:1.0'
     $docker = Get-Command 'docker.exe' -ErrorAction SilentlyContinue
     if (-not $docker) {
         throw 'Docker Desktop est requis pour isoler le navigateur de capture.'
@@ -85,11 +88,29 @@ if ($EnableScreenshots) {
     if ($LASTEXITCODE -ne 0) {
         throw 'Docker Desktop doit etre demarre pour activer la capture isolee.'
     }
-    Write-Host 'Preparation du conteneur de capture isole...'
-    & $docker.Source build --quiet --tag 'domain-abuse-toolkit-capture:1.0' `
-        --file (Join-Path $repositoryRoot 'docker\capture\Dockerfile') $repositoryRoot
-    if ($LASTEXITCODE -ne 0) {
-        throw 'La preparation du conteneur de capture a echoue.'
+    & $docker.Source image inspect $captureDockerImage --format '{{.Id}}' *> $null
+    $captureImageExists = $LASTEXITCODE -eq 0
+    if ($captureImageExists -and -not $ForceCaptureImageBuild) {
+        Write-Host "Image de capture existante reutilisee : $captureDockerImage" -ForegroundColor Green
+    }
+    else {
+        Write-Host 'Preparation du conteneur de capture isole...'
+        $captureBuildSucceeded = $false
+        for ($captureBuildAttempt = 1; $captureBuildAttempt -le 3; $captureBuildAttempt++) {
+            & $docker.Source build --quiet --tag $captureDockerImage `
+                --file (Join-Path $repositoryRoot 'docker\capture\Dockerfile') $repositoryRoot
+            if ($LASTEXITCODE -eq 0) {
+                $captureBuildSucceeded = $true
+                break
+            }
+            if ($captureBuildAttempt -lt 3) {
+                Write-Host "Docker est temporairement indisponible. Nouvelle tentative ($($captureBuildAttempt + 1)/3)..." -ForegroundColor Yellow
+                Start-Sleep -Seconds 2
+            }
+        }
+        if (-not $captureBuildSucceeded) {
+            throw 'La preparation du conteneur de capture a echoue apres trois tentatives.'
+        }
     }
     $captureDockerCommand = (& wsl.exe wslpath -a -u $docker.Source).Trim()
     if ($LASTEXITCODE -ne 0 -or -not $captureDockerCommand) {
@@ -126,6 +147,7 @@ export DAT_ENABLE_NETWORK_COLLECTION=$networkCollectionValue
 export DAT_ENABLE_RDAP_COLLECTION=$networkCollectionValue
 export DAT_ENABLE_SCREENSHOTS=$screenshotValue
 export DAT_CAPTURE_DOCKER_COMMAND="$captureDockerCommand"
+export DAT_CAPTURE_DOCKER_IMAGE="domain-abuse-toolkit-capture:1.0"
 mkdir -p "`$HOME/.local/share/domain-abuse-toolkit"
 echo "`$`$" > "`$HOME/.local/share/domain-abuse-toolkit/server-$Port.pid"
 exec "`$VENV/bin/python" -m uvicorn domain_abuse_toolkit.main:app --host 127.0.0.1 --port $Port
