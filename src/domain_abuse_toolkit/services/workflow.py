@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
@@ -28,15 +29,6 @@ class WorkflowView:
     next_action_label: str
 
 
-_STATE_LABELS = {
-    "to_do": "À faire",
-    "in_progress": "En cours",
-    "complete": "Terminé",
-    "attention": "Attention",
-    "scheduled": "Planifié",
-}
-
-
 def build_case_workflow(
     record: CaseRecord,
     *,
@@ -44,50 +36,50 @@ def build_case_workflow(
     latest_collection_job: Any | None = None,
     collection_error: str | None = None,
     now: datetime | None = None,
+    translate: Callable[..., str] | None = None,
 ) -> WorkflowView:
     """Derive the operator workflow from case facts, never from a second checklist."""
 
     current_time = now or datetime.now(UTC)
+    t = translate or (lambda key, **values: key.format(**values))
     latest_snapshot = record.snapshots[-1] if record.snapshots else None
     latest_submission = record.submissions[-1] if record.submissions else None
     job_status = str(getattr(latest_collection_job, "status", ""))
 
     evidence_state = "to_do"
-    evidence_summary = "Aucune collecte technique enregistrée."
+    evidence_summary = t("workflow.evidence.none")
     if job_status in {"queued", "running"}:
         evidence_state = "in_progress"
-        evidence_summary = "La collecte autorisée est en cours."
+        evidence_summary = t("workflow.evidence.running")
     elif collection_error:
         evidence_state = "attention"
-        evidence_summary = "La dernière tentative nécessite votre attention."
+        evidence_summary = t("workflow.evidence.attention")
     elif latest_snapshot is not None:
         evidence_state = (
             "complete"
             if latest_snapshot.status == CollectorStatus.COMPLETE
             else "attention"
         )
-        evidence_summary = (
-            f"{len(record.snapshots)} relevé(s) technique(s) conservé(s)."
-        )
+        evidence_summary = t("workflow.evidence.count", count=len(record.snapshots))
     elif not network_collection_enabled:
-        evidence_summary = "Collecte indisponible dans le mode sûr actuel."
+        evidence_summary = t("workflow.evidence.disabled")
 
     qualification_state = "complete" if record.qualification else "to_do"
     qualification_summary = (
-        f"Criticité confirmée : {record.criticality_confirmed.value.upper()}."
+        t("workflow.qualification.confirmed", level=record.criticality_confirmed.value.upper())
         if record.qualification and record.criticality_confirmed
-        else "Une validation humaine des observations est requise."
+        else t("workflow.qualification.required")
     )
 
     reporting_state = "complete" if record.submissions else "to_do"
     reporting_summary = (
-        f"{len(record.submissions)} signalement(s) externe(s) enregistré(s)."
+        t("workflow.reporting.count", count=len(record.submissions))
         if record.submissions
-        else "Les canaux et brouillons sont prêts à être examinés."
+        else t("workflow.reporting.ready")
     )
 
     follow_up_state = "to_do"
-    follow_up_summary = "Le suivi commencera après le premier signalement."
+    follow_up_summary = t("workflow.follow_up.waiting")
     if record.state in {
         CaseState.MITIGATED,
         CaseState.CLOSED,
@@ -95,16 +87,16 @@ def build_case_workflow(
         CaseState.TRANSFERRED,
     }:
         follow_up_state = "complete"
-        follow_up_summary = "Le traitement de ce dossier est terminé."
+        follow_up_summary = t("workflow.follow_up.complete")
     elif latest_submission:
         if latest_submission.follow_up_due_at <= current_time:
             follow_up_state = "attention"
-            follow_up_summary = "Une relance ou un nouveau contrôle est attendu."
+            follow_up_summary = t("workflow.follow_up.due")
         else:
             follow_up_state = "scheduled"
-            follow_up_summary = (
-                "Prochaine relance le "
-                f"{latest_submission.follow_up_due_at:%d/%m/%Y à %H:%M} UTC."
+            follow_up_summary = t(
+                "workflow.follow_up.scheduled",
+                date=f"{latest_submission.follow_up_due_at:%Y-%m-%d %H:%M} UTC",
             )
 
     if job_status in {"queued", "running"} or (
@@ -119,16 +111,22 @@ def build_case_workflow(
         current_step_id = "reporting"
 
     steps = (
-        _step("overview", "Dossier", "complete", "Contexte et cible enregistrés."),
-        _step("evidence", "Preuves", evidence_state, evidence_summary),
+        _step(
+            "overview",
+            t("workflow.step.overview"),
+            "complete",
+            t("workflow.overview.summary"),
+            t,
+        ),
+        _step("evidence", t("workflow.step.evidence"), evidence_state, evidence_summary, t),
         _step(
             "qualification",
-            "Qualification",
+            t("workflow.step.qualification"),
             qualification_state,
-            qualification_summary,
+            qualification_summary, t,
         ),
-        _step("reporting", "Signalements", reporting_state, reporting_summary),
-        _step("follow-up", "Suivi", follow_up_state, follow_up_summary),
+        _step("reporting", t("workflow.step.reporting"), reporting_state, reporting_summary, t),
+        _step("follow-up", t("workflow.step.follow_up"), follow_up_state, follow_up_summary, t),
     )
     steps = tuple(
         replace(step, current=step.id == current_step_id) for step in steps
@@ -136,28 +134,28 @@ def build_case_workflow(
 
     next_actions = {
         "evidence": (
-            "Constituer les preuves techniques",
+            t("workflow.next.evidence.title"),
             evidence_summary,
             "#evidence",
-            "Ouvrir les preuves",
+            t("workflow.next.evidence.button"),
         ),
         "qualification": (
-            "Confirmer la qualification",
+            t("workflow.next.qualification.title"),
             qualification_summary,
             "#qualification",
-            "Commencer la qualification",
+            t("workflow.next.qualification.button"),
         ),
         "reporting": (
-            "Préparer le prochain signalement",
-            "Choisissez le canal recommandé, puis utilisez le texte préparé.",
+            t("workflow.next.reporting.title"),
+            t("workflow.next.reporting.detail"),
             "#reporting",
-            "Préparer le signalement",
+            t("workflow.next.reporting.button"),
         ),
         "follow-up": (
-            "Suivre les démarches engagées",
+            t("workflow.next.follow_up.title"),
             follow_up_summary,
             "#follow-up",
-            "Voir le suivi",
+            t("workflow.next.follow_up.button"),
         ),
     }
     title, detail, href, label = next_actions[current_step_id]
@@ -171,12 +169,18 @@ def build_case_workflow(
     )
 
 
-def _step(step_id: str, label: str, state: str, summary: str) -> WorkflowStep:
+def _step(
+    step_id: str,
+    label: str,
+    state: str,
+    summary: str,
+    translate: Callable[..., str],
+) -> WorkflowStep:
     return WorkflowStep(
         id=step_id,
         label=label,
         state=state,
-        state_label=_STATE_LABELS[state],
+        state_label=translate(f"workflow.state.{state}"),
         summary=summary,
         href=f"#{step_id}",
     )

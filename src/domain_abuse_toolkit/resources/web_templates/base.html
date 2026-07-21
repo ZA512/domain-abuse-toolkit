@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr">
+<html lang="{{ ui_language }}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,7 +10,7 @@
   <body>
     <header class="site-header">
       <a class="brand" href="/">Domain Abuse Toolkit</a>
-      <span class="badge badge-safe">Validation humaine</span>
+      <span class="badge badge-safe">{{ t("app.human_validation") }}</span>
     </header>
     <main class="shell">
       {% block content %}{% endblock %}

@@ -90,7 +90,7 @@ class ReportingService:
             return relevant, "Human decision required: use only when the official scope applies."
         return False, "Available as an optional official channel."
 
-    def channel_views(self, case: CaseRecord) -> list[dict[str, object]]:
+    def channel_views(self, case: CaseRecord, translate=None) -> list[dict[str, object]]:
         views = []
         for channel in self.channels:
             if channel.status == "deprecated":
@@ -100,11 +100,34 @@ class ReportingService:
                 reason = "This official channel must be reverified before use."
             else:
                 recommended, reason = self._recommendation(channel, case)
+            purpose = channel.purpose
+            notes = channel.notes
+            required_fields = channel.required_fields
+            category_label = channel.category.replace("_", " ")
+            if translate:
+                purpose = translate(
+                    f"channel.{channel.id}.purpose", default=channel.purpose
+                )
+                notes = translate(f"channel.{channel.id}.notes", default=channel.notes)
+                required_fields = [
+                    translate(f"channel.field.{field}", default=field)
+                    for field in channel.required_fields
+                ]
+                category_label = translate(
+                    f"channel.category.{channel.category}", default=category_label
+                )
+                reason = translate(
+                    f"channel.{channel.id}.recommendation", default=reason
+                )
             views.append(
                 {
                     "channel": channel,
                     "recommended": recommended,
                     "recommendation_reason": reason,
+                    "purpose": purpose,
+                    "notes": notes,
+                    "required_fields": required_fields,
+                    "category_label": category_label,
                     "action_url": str(channel.action_url),
                     "source_url": str(channel.source_url),
                 }

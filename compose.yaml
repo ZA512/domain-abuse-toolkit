@@ -11,6 +11,7 @@ services:
       DAT_HOST: 0.0.0.0
       DAT_PORT: 8080
       DAT_PUBLIC_BASE_URL: http://127.0.0.1:${DAT_HOST_PORT:-8080}
+      DAT_UI_LANGUAGE: ${DAT_UI_LANGUAGE:-en}
       DAT_DATA_DIR: /data
       DAT_ENABLE_NETWORK_COLLECTION: "false"
       DAT_ENABLE_RDAP_COLLECTION: "false"

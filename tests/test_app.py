@@ -70,11 +70,11 @@ def test_dns_collection_is_disabled_by_default_and_requires_opt_in(
     assert passive_rejected.status_code == 403
 
     detail = client.get(f"/cases/{created['id']}")
-    assert "ne contacte jamais la cible" in detail.text
-    assert "Collecte technique désactivée dans le mode sûr" in detail.text
+    assert "Opening a case never contacts the target" in detail.text
+    assert "Technical collection is disabled in safe mode" in detail.text
     assert 'data-default-step="qualification"' in detail.text
     assert detail.text.count("data-workflow-step=") == 5
-    assert "Confirmer la qualification" in detail.text
+    assert "Confirm qualification" in detail.text
 
 
 def test_verified_capture_is_displayed_inline_and_tampering_is_rejected(
@@ -203,10 +203,10 @@ def test_snapshot_changes_and_next_review_are_rendered_first(client: TestClient)
     detail = client.get(f"/cases/{created['id']}")
 
     assert detail.status_code == 200
-    assert "1 changement(s) depuis le relevé précédent" in detail.text
+    assert "1 change(s) since the previous snapshot" in detail.text
     assert "200" in detail.text and "404" in detail.text
-    assert "Prochain contrôle technique" in detail.text
-    assert "Afficher les observations et pièces techniques" in detail.text
+    assert "Next technical check" in detail.text
+    assert "Show observations and technical artifacts" in detail.text
 
 
 def test_html_forms_require_a_valid_local_csrf_token(client: TestClient) -> None:
@@ -274,8 +274,8 @@ def test_action_api_updates_case_and_rejects_cross_site_requests(
     assert updated.json()["actions"][0]["completed_at"] is not None
 
     detail = client.get(f"/cases/{created['id']}")
-    assert "Journal du dossier" in detail.text
-    assert "Terminée · Validate the observations and criticality" in detail.text
+    assert "Case journal" in detail.text
+    assert "Completed · Validate the observations and criticality" in detail.text
 
 
 def test_qualification_api_requires_override_reason_and_renders_revision(
@@ -313,9 +313,9 @@ def test_qualification_api_requires_override_reason_and_renders_revision(
     assert qualified.json()["actions"][0]["completed_at"] is not None
 
     detail = client.get(f"/cases/{created['id']}")
-    assert "Qualifier les observations" in detail.text
-    assert "Qualification confirmée · LOW" in detail.text
-    assert "Préparer et effectuer les signalements" in detail.text
+    assert "Qualify observations" in detail.text
+    assert "Qualification confirmed · LOW" in detail.text
+    assert "Prepare and perform reports" in detail.text
     assert "Google Safe Browsing" in detail.text
     assert "data-email-draft" in detail.text
     assert 'data-default-step="reporting"' in detail.text
@@ -380,8 +380,8 @@ def test_submission_api_requires_confirmation_and_renders_follow_up(
 
     detail = client.get(f"/cases/{created['id']}")
     assert detail.status_code == 200
-    assert "effectué un signalement" in detail.text
-    assert "Signalement enregistré" in detail.text
+    assert "I submitted a report" in detail.text
+    assert "Report recorded" in detail.text
     assert "TEST-123" in detail.text
     assert 'data-default-step="follow-up"' in detail.text
 

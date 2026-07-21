@@ -1,27 +1,27 @@
 {% extends "base.html" %}
-{% block title %}New case — Domain Abuse Toolkit{% endblock %}
+{% block title %}{{ t("home.page_title") }}{% endblock %}
 {% block content %}
   <section class="hero">
-    <p class="eyebrow">Local MVP foundation</p>
-    <h1>Turn a suspicious URL into an actionable case.</h1>
-    <p class="lead">Create the record, normalize the exact target, prepare the first actions and generate bilingual drafts. No network collection or external message occurs from this screen.</p>
+    <p class="eyebrow">{{ t("home.eyebrow") }}</p>
+    <h1>{{ t("home.title") }}</h1>
+    <p class="lead">{{ t("home.lead") }}</p>
   </section>
 
-  <section class="capability-bar" aria-label="Enabled capabilities">
-    <span>Network collection: <strong>{{ "on" if capabilities.network_collection else "off" }}</strong></span>
-    <span>Offline rendering: <strong>{{ "on" if capabilities.screenshots else "off" }}</strong></span>
-    <span>LLM: <strong>{{ "on" if capabilities.llm else "off" }}</strong></span>
-    <span>Outlook Graph: <strong>{{ "on" if capabilities.microsoft_graph else "off" }}</strong></span>
+  <section class="capability-bar" aria-label="{{ t('home.capabilities') }}">
+    <span>{{ t("home.network") }}: <strong>{{ t("home.on") if capabilities.network_collection else t("home.off") }}</strong></span>
+    <span>{{ t("home.rendering") }}: <strong>{{ t("home.on") if capabilities.screenshots else t("home.off") }}</strong></span>
+    <span>LLM: <strong>{{ t("home.on") if capabilities.llm else t("home.off") }}</strong></span>
+    <span>Outlook Graph: <strong>{{ t("home.on") if capabilities.microsoft_graph else t("home.off") }}</strong></span>
   </section>
 
   <div class="layout-two">
     <section class="panel">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">Step 1</p>
-          <h2>Create a case</h2>
+          <p class="eyebrow">{{ t("home.step1") }}</p>
+          <h2>{{ t("home.create") }}</h2>
         </div>
-        <span class="badge">2 required decisions</span>
+        <span class="badge">{{ t("home.required") }}</span>
       </div>
 
       {% if error %}<div class="alert" role="alert">{{ error }}</div>{% endif %}
@@ -29,62 +29,62 @@
       <form action="/cases" method="post" class="case-form">
         <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
         <label>
-          Suspicious URL
+          {{ t("home.target") }}
           <input name="target" type="text" required maxlength="4096" placeholder="https://suspicious.example/path" value="{{ form.target or '' }}">
-          <small>The exact path and query are preserved; fragments are excluded from collection.</small>
+          <small>{{ t("home.target_help") }}</small>
         </label>
         <label>
-          Brand profile
+          {{ t("home.brand") }}
           <input name="brand" type="text" required maxlength="200" placeholder="Example Brand" value="{{ form.brand or '' }}">
         </label>
         <label>
-          Legitimate reference URL
+          {{ t("home.legit") }}
           <input name="legit_url" type="text" required maxlength="4096" placeholder="https://www.example.com/" value="{{ form.legit_url or '' }}">
         </label>
         <div class="grid-two">
           <label>
-            Suspicion type
+            {{ t("home.suspicion") }}
             <select name="suspicion_type">
-              <option value="brand impersonation">Brand impersonation</option>
-              <option value="phishing and credential collection">Phishing / credentials</option>
-              <option value="fraudulent payment or shop">Fraudulent payment / shop</option>
-              <option value="malware distribution">Malware distribution</option>
+              <option value="brand impersonation">{{ t("home.suspicion.brand") }}</option>
+              <option value="phishing and credential collection">{{ t("home.suspicion.phishing") }}</option>
+              <option value="fraudulent payment or shop">{{ t("home.suspicion.payment") }}</option>
+              <option value="malware distribution">{{ t("home.suspicion.malware") }}</option>
             </select>
           </label>
           <label>
-            Urgency
+            {{ t("home.urgency") }}
             <select name="urgency">
-              <option value="normal">Normal</option>
-              <option value="high">High</option>
-              <option value="immediate">Immediate</option>
+              <option value="normal">{{ t("home.normal") }}</option>
+              <option value="high">{{ t("home.high") }}</option>
+              <option value="immediate">{{ t("home.immediate") }}</option>
             </select>
           </label>
         </div>
         <details>
-          <summary>Optional context</summary>
+          <summary>{{ t("home.optional") }}</summary>
           <label>
-            Campaign
+            {{ t("home.campaign") }}
             <input name="campaign" type="text" maxlength="200" value="{{ form.campaign or '' }}">
           </label>
           <label>
-            Internal notes
+            {{ t("home.notes") }}
             <textarea name="notes" rows="4" maxlength="4000">{{ form.notes or '' }}</textarea>
           </label>
         </details>
-        <button type="submit" class="button button-primary">Create case and prepare workflow</button>
+        <button type="submit" class="button button-primary">{{ t("home.submit") }}</button>
       </form>
     </section>
 
     <aside class="panel panel-muted">
-      <p class="eyebrow">Safety contract</p>
-      <h2>What happens now</h2>
+      <p class="eyebrow">{{ t("home.safety") }}</p>
+      <h2>{{ t("home.what_happens") }}</h2>
       <ol class="compact-list">
-        <li>The input is normalized without contacting the target.</li>
-        <li>A private local case record and SHA-256 manifest are created.</li>
-        <li>Suggested actions and bilingual registrar drafts are prepared.</li>
-        <li>A human must validate every fact before external use.</li>
+        <li>{{ t("home.safety.1") }}</li>
+        <li>{{ t("home.safety.2") }}</li>
+        <li>{{ t("home.safety.3") }}</li>
+        <li>{{ t("home.safety.4") }}</li>
       </ol>
-      <p class="callout">Cases are restored from integrity-checked local records after each restart. Private data remains under <code>case-data/</code>, which Git ignores.</p>
+      <p class="callout">{{ t("home.persistence") }}</p>
     </aside>
   </div>
 
@@ -92,15 +92,15 @@
     <section class="panel case-list">
       <div class="section-heading">
         <div>
-          <p class="eyebrow">Persistent local follow-up</p>
-          <h2>Cases to review</h2>
+          <p class="eyebrow">{{ t("home.follow_up") }}</p>
+          <h2>{{ t("home.review") }}</h2>
         </div>
-        <span class="badge">{{ case_counts.total }} total</span>
+        <span class="badge">{{ t("home.total", count=case_counts.total) }}</span>
       </div>
       <div class="case-summary" aria-label="Case summary">
-        <span><strong>{{ case_counts.needs_validation }}</strong> need validation</span>
-        <span><strong>{{ case_counts.critical }}</strong> critical</span>
-        <span><strong>{{ case_counts.technical_due }}</strong> technical checks due</span>
+        <span><strong>{{ case_counts.needs_validation }}</strong> {{ t("home.need_validation") }}</span>
+        <span><strong>{{ case_counts.critical }}</strong> {{ t("home.critical") }}</span>
+        <span><strong>{{ case_counts.technical_due }}</strong> {{ t("home.checks_due") }}</span>
       </div>
       {% for case in cases %}
         {% set review = case_review_status[case.id] %}
@@ -109,12 +109,12 @@
             <strong>{{ case.brand }} · {{ case.target.registrable_domain }}</strong>
             <small>{{ case.id }} · {{ case.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</small>
             <small class="break-anywhere">{{ case.target.normalized_url }}</small>
-            {% if review %}<small class="{{ 'overdue-text' if review.overdue else '' }}">Technical check {{ 'due' if review.overdue else 'scheduled' }} · {{ review.due_at.strftime('%Y-%m-%d %H:%M') }} UTC</small>{% endif %}
+            {% if review %}<small class="{{ 'overdue-text' if review.overdue else '' }}">{{ t("home.check", status=t("home.due") if review.overdue else t("home.scheduled"), date=review.due_at.strftime('%Y-%m-%d %H:%M UTC')) }}</small>{% endif %}
           </span>
           <span class="case-row-badges">
             <span class="badge badge-high">{{ case.criticality_proposed }}</span>
             <span class="badge">{{ case.state }}</span>
-            {% if review and review.overdue %}<span class="badge badge-high">Check due</span>{% endif %}
+            {% if review and review.overdue %}<span class="badge badge-high">{{ t("home.check_due") }}</span>{% endif %}
           </span>
         </a>
       {% endfor %}
@@ -122,6 +122,6 @@
   {% endif %}
 
   {% if load_warnings %}
-    <div class="alert" role="alert">{{ load_warnings|length }} local case(s) could not be restored because their integrity or format check failed.</div>
+    <div class="alert" role="alert">{{ t("home.load_warning", count=load_warnings|length) }}</div>
   {% endif %}
 {% endblock %}

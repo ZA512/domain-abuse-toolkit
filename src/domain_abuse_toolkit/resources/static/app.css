@@ -171,8 +171,8 @@ summary { cursor: pointer; font-weight: 750; }
 code { padding: 2px 5px; border-radius: 5px; background: rgba(19, 33, 27, 0.08); }
 
 /* Guided case workflow */
-.case-command-bar { position: sticky; top: 0; z-index: 10; display: flex; justify-content: space-between; gap: 24px; align-items: center; margin: -24px -20px 0; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: rgba(246, 248, 246, 0.96); backdrop-filter: blur(14px); }
-.case-command-bar h1 { margin: 0 0 5px; font-size: clamp(1.65rem, 3vw, 2.35rem); line-height: 1.05; }
+.case-command-bar { position: relative; display: flex; justify-content: space-between; gap: 24px; align-items: center; margin: -24px -20px 0; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+.case-command-bar h1 { margin: 0 0 5px; font-size: clamp(1.65rem, 3vw, 2.35rem); line-height: 1.05; overflow-wrap: anywhere; }
 .case-identity { min-width: 0; }
 .case-url { margin: 0; color: var(--muted); font-size: 0.9rem; }
 .case-command-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
@@ -182,7 +182,7 @@ code { padding: 2px 5px; border-radius: 5px; background: rgba(19, 33, 27, 0.08);
 .next-action-card p:not(.eyebrow) { margin-top: 5px; color: var(--muted); }
 .next-action-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: var(--accent); color: #fff; font-size: 1.35rem; font-weight: 800; }
 .workflow-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 22px; align-items: start; }
-.workflow-rail { position: sticky; top: 126px; display: grid; gap: 4px; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: #fff; box-shadow: 0 12px 32px rgba(19, 33, 27, 0.06); }
+.workflow-rail { position: sticky; top: 20px; display: grid; gap: 4px; padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: #fff; box-shadow: 0 12px 32px rgba(19, 33, 27, 0.06); }
 .workflow-rail-title { margin: 3px 8px 9px; color: var(--muted); font-size: 0.73rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; }
 .workflow-step { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; padding: 11px 9px; border: 1px solid transparent; border-radius: 11px; color: var(--ink); text-decoration: none; }
 .workflow-step:hover { background: #f6f8f6; }
@@ -213,6 +213,9 @@ code { padding: 2px 5px; border-radius: 5px; background: rgba(19, 33, 27, 0.08);
 .task-disclosure[open] > summary, .toolbox-disclosure[open] > summary { padding-bottom: 13px; border-bottom: 1px solid var(--line); }
 .form-actions { display: flex; justify-content: flex-end; }
 .compact-snapshots { margin-top: 22px; }
+.older-snapshots { margin-top: 12px; padding: 0; border: 0; }
+.older-snapshots > summary { padding: 13px 15px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); font-weight: 750; cursor: pointer; }
+.older-snapshots[open] > summary { margin-bottom: 12px; }
 .empty-workspace { margin: 24px 0; padding: 24px; border: 1px dashed #b8c4bd; border-radius: 12px; color: var(--muted); text-align: center; }
 .workflow-badge-in_progress { background: #dceaf8; color: #175a91; }
 .workflow-badge-attention { background: var(--warning-soft); color: var(--warning); }

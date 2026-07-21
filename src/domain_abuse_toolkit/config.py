@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     data_dir: Path = Path("./case-data")
     max_export_bytes: int = Field(default=100 * 1024 * 1024, ge=1024 * 1024)
     public_base_url: str = "http://127.0.0.1:8080"
+    ui_language: str = Field(default="en", pattern=r"^[a-z]{2}(?:-[A-Z]{2})?$")
 
     enable_network_collection: bool = False
     dns_timeout_seconds: float = Field(default=2.0, ge=0.2, le=10)

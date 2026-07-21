@@ -76,6 +76,20 @@ The launchers keep the Python environments and private pilot cases under the WSL
 
 The Docker safe-mode launcher is the target local runtime. The WSL network launcher remains temporarily necessary for the implemented passive DNS/HTTP/TLS/RDAP collection and its networkless offline screenshot worker. A future live browser will be a separate, ephemeral Playwright service behind controlled egress; the web container will never receive the Docker socket.
 
+### Interface language
+
+The interface uses English by default and intentionally has no in-product language
+selector. Choose a deployment language at startup instead:
+
+```powershell
+PowerShell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-toolkit.ps1 -UiLanguage fr
+```
+
+Docker Compose reads `DAT_UI_LANGUAGE` (`en` by default). Translation catalogues live
+under `src/domain_abuse_toolkit/resources/i18n/`: copy `en.json`, keep the same keys,
+translate the values, then start with the new locale code. Missing keys fall back to
+English; an absent or invalid catalogue stops startup with an explicit error.
+
 ### Manual Python setup
 
 Requirements: Python 3.12 or later.

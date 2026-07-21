@@ -44,6 +44,7 @@ from domain_abuse_toolkit.services.collectors import DnsCollector
 from domain_abuse_toolkit.services.drafts import DraftService
 from domain_abuse_toolkit.services.evidence import EvidenceStore, EvidenceStoreError
 from domain_abuse_toolkit.services.exports import EvidenceExportService
+from domain_abuse_toolkit.services.i18n import Translator
 from domain_abuse_toolkit.services.rdap_collector import RdapCollector
 from domain_abuse_toolkit.services.reporting import (
     ReportingCatalogueError,
@@ -59,6 +60,8 @@ from domain_abuse_toolkit.services.workflow import build_case_workflow
 settings = get_settings()
 package_root = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=package_root / "resources" / "web_templates")
+translator = Translator(settings.ui_language)
+templates.env.globals.update(t=translator, ui_language=translator.locale)
 
 case_service = CaseService(EvidenceStore(settings.data_dir), DraftService())
 export_service = EvidenceExportService(
@@ -239,6 +242,7 @@ def _case_context(
         latest_collection_job=latest_collection_job,
         collection_error=collection_error,
         now=now,
+        translate=translator,
     )
     return {
         "request": request,
@@ -253,7 +257,7 @@ def _case_context(
         "form_csrf_token": form_csrf_token,
         "integrity_errors": integrity_errors,
         "artifact_count": artifact_count,
-        "reporting_channels": reporting_service.channel_views(record),
+        "reporting_channels": reporting_service.channel_views(record, translator),
         "reporting_summaries": reporting_service.summaries(record),
         "submission_options": reporting_service.submission_options(),
         "latest_submission": record.submissions[-1] if record.submissions else None,
