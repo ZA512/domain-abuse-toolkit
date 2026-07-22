@@ -19,6 +19,7 @@ from domain_abuse_toolkit.models import (
     ActionUpdate,
     CaseCreate,
     CollectionStart,
+    CollectorStatus,
     Criticality,
     Draft,
     QualificationEvent,
@@ -34,6 +35,10 @@ from domain_abuse_toolkit.services.cases import (
     CaseService,
     QualificationValidationError,
     SubmissionValidationError,
+)
+from domain_abuse_toolkit.services.collection_assessment import (
+    snapshot_can_retry,
+    snapshot_outcome,
 )
 from domain_abuse_toolkit.services.collection_jobs import (
     CollectionAlreadyRunningError,
@@ -214,6 +219,20 @@ def _safe_return_path(value: str) -> str:
     return path
 
 
+def _snapshot_assessment(snapshot: SnapshotEvent | None) -> dict[str, object] | None:
+    if snapshot is None:
+        return None
+    return {
+        "outcome": snapshot_outcome(snapshot),
+        "can_retry": snapshot_can_retry(snapshot),
+        "limitations": [
+            {"collector": result.collector, "error": error}
+            for result in snapshot.results
+            for error in result.errors
+        ],
+    }
+
+
 def _case_context(
     request: Request,
     case_id: str,
@@ -300,6 +319,12 @@ def _case_context(
         "latest_submission": record.submissions[-1] if record.submissions else None,
         "latest_collection_job": latest_collection_job,
         "latest_snapshot": latest_snapshot,
+        "latest_assessment": _snapshot_assessment(latest_snapshot),
+        "collection_modal_open": bool(
+            latest_collection_job
+            and request.query_params.get("collection_job")
+            == latest_collection_job.id
+        ),
         "technical_review": technical_review,
         "snapshots": list(reversed(record.snapshots)),
         "capabilities": capabilities,
@@ -428,7 +453,7 @@ def create_case_form(
             },
             status_code=422,
         )
-    return RedirectResponse(url=f"/cases/{record.id}#qualification", status_code=303)
+    return RedirectResponse(url=f"/cases/{record.id}#evidence", status_code=303)
 
 
 @app.get("/cases/{case_id}", response_class=HTMLResponse)
@@ -602,7 +627,9 @@ def start_dns_collection_form(
 ):  # type: ignore[no-untyped-def]
     _verify_form_csrf(csrf_token)
     try:
-        _start_dns_collection(case_id, confirmed_authorized=confirmed_authorized)
+        job = _start_dns_collection(
+            case_id, confirmed_authorized=confirmed_authorized
+        )
     except CaseNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Case not found") from exc
     except ValueError as exc:
@@ -611,7 +638,9 @@ def start_dns_collection_form(
             url=f"/cases/{case_id}?collection_error={encoded_error}#evidence",
             status_code=303,
         )
-    return RedirectResponse(url=f"/cases/{case_id}#evidence", status_code=303)
+    return RedirectResponse(
+        url=f"/cases/{case_id}?collection_job={job.id}#evidence", status_code=303
+    )
 
 
 def _start_dns_collection(case_id: str, *, confirmed_authorized: bool):  # type: ignore[no-untyped-def]
@@ -630,7 +659,9 @@ def start_passive_collection_form(
 ):  # type: ignore[no-untyped-def]
     _verify_form_csrf(csrf_token)
     try:
-        _start_passive_collection(case_id, confirmed_authorized=confirmed_authorized)
+        job = _start_passive_collection(
+            case_id, confirmed_authorized=confirmed_authorized
+        )
     except CaseNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Case not found") from exc
     except ValueError as exc:
@@ -639,7 +670,9 @@ def start_passive_collection_form(
             url=f"/cases/{case_id}?collection_error={encoded_error}#evidence",
             status_code=303,
         )
-    return RedirectResponse(url=f"/cases/{case_id}#evidence", status_code=303)
+    return RedirectResponse(
+        url=f"/cases/{case_id}?collection_job={job.id}#evidence", status_code=303
+    )
 
 
 def _start_passive_collection(
@@ -708,6 +741,38 @@ def get_case_api(case_id: str) -> dict[str, object]:
     except CaseNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Case not found") from exc
     return record.model_dump(mode="json")
+
+
+@app.get("/api/v1/cases/{case_id}/collections/latest")
+def latest_collection_api(case_id: str) -> dict[str, object]:
+    try:
+        record = case_service.get(case_id)
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Case not found") from exc
+    job = collection_jobs.latest_for_case(case_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="No collection job found")
+    snapshot = next(
+        (item for item in record.snapshots if item.id == job.snapshot_id), None
+    )
+    return {
+        "job": job.model_dump(mode="json"),
+        "terminal": job.status
+        not in {CollectorStatus.QUEUED, CollectorStatus.RUNNING},
+        "outcome": snapshot_outcome(snapshot) if snapshot else None,
+        "results": (
+            [
+                {
+                    "collector": result.collector,
+                    "status": result.status,
+                    "errors": [error.model_dump() for error in result.errors],
+                }
+                for result in snapshot.results
+            ]
+            if snapshot
+            else []
+        ),
+    }
 
 
 @app.patch("/api/v1/cases/{case_id}/actions/{action_code}")

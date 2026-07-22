@@ -89,7 +89,7 @@ def test_action_events_drive_state_and_survive_restart(tmp_path) -> None:  # typ
             reviewer="MG",
         ),
     )
-    assert case.state == CaseState.COLLECTING
+    assert case.state == CaseState.QUALIFIED
     assert case.actions[0].completed_at is not None
     assert case.criticality_confirmed == case.criticality_proposed
 
@@ -105,7 +105,7 @@ def test_action_events_drive_state_and_survive_restart(tmp_path) -> None:  # typ
     assert restarted.evidence_store.verify_case(case.id) == []
 
     restarted.set_action_completed(case.id, "prepare-registrar", completed=False)
-    assert restored.state == CaseState.COLLECTING
+    assert restored.state == CaseState.QUALIFIED
     assert restarted.history(case.id)[0].completed is False
 
 

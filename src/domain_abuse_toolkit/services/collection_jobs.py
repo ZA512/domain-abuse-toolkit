@@ -6,7 +6,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from domain_abuse_toolkit.models import (
     CollectorError,
@@ -67,6 +67,9 @@ class CollectionJobView(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     error: str | None = None
+    current_stage: str = "queued"
+    planned_stages: list[str] = Field(default_factory=list)
+    completed_stages: list[str] = Field(default_factory=list)
 
 
 class CollectionJobService:
@@ -97,14 +100,22 @@ class CollectionJobService:
         self._futures: dict[str, Future[None]] = {}
 
     def start_dns(self, case_id: str) -> CollectionJobView:
-        return self._start(case_id, self._run_dns)
+        return self._start(case_id, self._run_dns, ["dns", "persisting"])
 
     def start_passive(self, case_id: str) -> CollectionJobView:
         if self.web_collector is None:
             raise ValueError("The HTTP/TLS collector is not configured.")
-        return self._start(case_id, self._run_passive)
+        stages = ["dns", "http_tls"]
+        if self.rdap_collector is not None:
+            stages.append("rdap")
+        if self.screenshot_collector is not None:
+            stages.append("screenshot")
+        stages.append("persisting")
+        return self._start(case_id, self._run_passive, stages)
 
-    def _start(self, case_id: str, worker) -> CollectionJobView:  # type: ignore[no-untyped-def]
+    def _start(
+        self, case_id: str, worker, planned_stages: list[str]
+    ) -> CollectionJobView:  # type: ignore[no-untyped-def]
         record = self.case_service.get(case_id)
         with self._lock:
             active_jobs = [
@@ -130,6 +141,7 @@ class CollectionJobService:
                 snapshot_id=f"SNP-{uuid.uuid4().hex.upper()}",
                 status=CollectorStatus.QUEUED,
                 queued_at=datetime.now(UTC),
+                planned_stages=planned_stages,
             )
             self._jobs[job.id] = job
             future = self._executor.submit(worker, job.id, record.target.model_copy(deep=True))
@@ -137,7 +149,12 @@ class CollectionJobService:
             return job.model_copy(deep=True)
 
     def _run_dns(self, job_id: str, target: NormalizedTarget) -> None:
-        self._update(job_id, status=CollectorStatus.RUNNING, started_at=datetime.now(UTC))
+        self._update(
+            job_id,
+            status=CollectorStatus.RUNNING,
+            started_at=datetime.now(UTC),
+            current_stage="dns",
+        )
         job = self.get(job_id)
         try:
             output = self.dns_collector.collect(target, job.snapshot_id)
@@ -151,10 +168,16 @@ class CollectionJobService:
                 ),
                 artifacts=[],
             )
+        self._advance(job_id, completed="dns", current="persisting")
         self._persist(job_id, [output.result], output.artifacts)
 
     def _run_passive(self, job_id: str, target: NormalizedTarget) -> None:
-        self._update(job_id, status=CollectorStatus.RUNNING, started_at=datetime.now(UTC))
+        self._update(
+            job_id,
+            status=CollectorStatus.RUNNING,
+            started_at=datetime.now(UTC),
+            current_stage="dns",
+        )
         job = self.get(job_id)
         try:
             dns_output = self.dns_collector.collect(target, job.snapshot_id)
@@ -171,6 +194,7 @@ class CollectionJobService:
 
         results = [dns_output.result]
         artifacts = list(dns_output.artifacts)
+        self._advance(job_id, completed="dns", current="http_tls")
         if dns_output.result.status == CollectorStatus.FAILED:
             now = datetime.now(UTC)
             for collector in ("http", "tls"):
@@ -218,6 +242,7 @@ class CollectionJobService:
             artifacts.extend(web_output.artifacts)
 
         if self.rdap_collector is not None:
+            self._advance(job_id, completed="http_tls", current="rdap")
             try:
                 rdap_output = self.rdap_collector.collect(target, job.snapshot_id)
             except Exception:  # collector boundary deliberately hides endpoint details
@@ -232,15 +257,18 @@ class CollectionJobService:
                 )
             results.append(rdap_output.result)
             artifacts.extend(rdap_output.artifacts)
+        else:
+            self._advance(job_id, completed="http_tls", current=None)
 
         if self.screenshot_collector is not None:
+            previous_stage = "rdap" if self.rdap_collector is not None else None
+            self._advance(job_id, completed=previous_stage, current="screenshot")
             source_artifact = next(
                 (
                     artifact
                     for artifact in reversed(artifacts)
                     if artifact.metadata.get("collector") == "http"
                     and artifact.media_type in {"text/html", "application/xhtml+xml"}
-                    and not artifact.metadata.get("truncated")
                 ),
                 None,
             )
@@ -271,6 +299,10 @@ class CollectionJobService:
                 )
             results.append(screenshot_output.result)
             artifacts.extend(screenshot_output.artifacts)
+            self._advance(job_id, completed="screenshot", current="persisting")
+        else:
+            previous_stage = "rdap" if self.rdap_collector is not None else "http_tls"
+            self._advance(job_id, completed=previous_stage, current="persisting")
         self._persist(job_id, results, artifacts)
 
     def _persist(
@@ -301,17 +333,24 @@ class CollectionJobService:
         try:
             self.case_service.record_snapshot(snapshot, artifacts)
         except Exception:
+            completed_stages = list(self.get(job_id).completed_stages)
+            if "persisting" not in completed_stages:
+                completed_stages.append("persisting")
             self._update(
                 job_id,
                 status=CollectorStatus.FAILED,
                 finished_at=datetime.now(UTC),
                 error="The collection result could not be persisted.",
+                current_stage="done",
+                completed_stages=completed_stages,
             )
             return
         self._update(
             job_id,
             status=status,
             finished_at=finished_at,
+            current_stage="done",
+            completed_stages=[*self.get(job_id).completed_stages, "persisting"],
             error=next(
                 (
                     error.message
@@ -358,6 +397,18 @@ class CollectionJobService:
     def _update(self, job_id: str, **updates) -> None:  # type: ignore[no-untyped-def]
         with self._lock:
             self._jobs[job_id] = self._jobs[job_id].model_copy(update=updates)
+
+    def _advance(
+        self, job_id: str, *, completed: str | None, current: str | None
+    ) -> None:
+        job = self.get(job_id)
+        completed_stages = list(job.completed_stages)
+        if completed and completed not in completed_stages:
+            completed_stages.append(completed)
+        updates: dict[str, object] = {"completed_stages": completed_stages}
+        if current is not None:
+            updates["current_stage"] = current
+        self._update(job_id, **updates)
 
     def get(self, job_id: str) -> CollectionJobView:
         with self._lock:

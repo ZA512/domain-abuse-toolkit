@@ -14,6 +14,7 @@ from domain_abuse_toolkit.models import (
     SnapshotChange,
     SnapshotEvent,
 )
+from domain_abuse_toolkit.services.collection_jobs import CollectionJobView
 from domain_abuse_toolkit.services.evidence import PendingArtifact
 
 
@@ -123,6 +124,63 @@ def test_dns_collection_is_disabled_by_default_and_requires_opt_in(
     assert 'data-default-step="qualification"' in detail.text
     assert detail.text.count("data-workflow-step=") == 5
     assert "Confirm qualification" in detail.text
+
+
+def test_passive_collection_opens_live_progress_dialog(client: TestClient) -> None:
+    created = client.post(
+        "/api/v1/cases",
+        json={
+            "target": "https://example.net/",
+            "brand": "Example Brand",
+            "legit_url": "https://www.example.com/",
+        },
+    ).json()
+    main_module = importlib.import_module("domain_abuse_toolkit.main")
+    now = datetime.now(UTC)
+    job = CollectionJobView(
+        id="JOB-LIVE-PROGRESS",
+        case_id=created["id"],
+        snapshot_id="SNP-LIVE-PROGRESS",
+        status=CollectorStatus.RUNNING,
+        queued_at=now,
+        started_at=now,
+        current_stage="http_tls",
+        planned_stages=["dns", "http_tls", "rdap", "screenshot", "persisting"],
+        completed_stages=["dns"],
+    )
+
+    class FakeJobs:
+        @staticmethod
+        def start_passive(_case_id: str) -> CollectionJobView:
+            return job
+
+        @staticmethod
+        def latest_for_case(_case_id: str) -> CollectionJobView:
+            return job
+
+    main_module.collection_jobs = FakeJobs()
+    main_module.settings.enable_network_collection = True
+    case_path = f"/cases/{created['id']}"
+    started = client.post(
+        f"{case_path}/collections/passive",
+        data={
+            "_csrf_token": _csrf_token(client, case_path),
+            "confirmed_authorized": "true",
+        },
+        follow_redirects=False,
+    )
+
+    assert started.status_code == 303
+    assert "collection_job=JOB-LIVE-PROGRESS" in started.headers["location"]
+    progress_page = client.get(
+        f"{case_path}?collection_job=JOB-LIVE-PROGRESS"
+    )
+    assert 'data-auto-open="true"' in progress_page.text
+    assert 'data-collection-stage="http_tls"' in progress_page.text
+    status = client.get(f"/api/v1/cases/{created['id']}/collections/latest")
+    assert status.status_code == 200
+    assert status.json()["job"]["current_stage"] == "http_tls"
+    assert not status.json()["terminal"]
 
 
 def test_verified_capture_is_displayed_inline_and_tampering_is_rejected(
@@ -269,6 +327,7 @@ def test_html_forms_require_a_valid_local_csrf_token(client: TestClient) -> None
     payload["_csrf_token"] = _csrf_token(client)
     accepted = client.post("/cases", data=payload, follow_redirects=False)
     assert accepted.status_code == 303
+    assert accepted.headers["location"].endswith("#evidence")
 
 
 def test_create_case_api_has_no_external_side_effect(client: TestClient) -> None:
@@ -318,7 +377,7 @@ def test_action_api_updates_case_and_rejects_cross_site_requests(
 
     updated = client.patch(action_url, json={"completed": True})
     assert updated.status_code == 200
-    assert updated.json()["state"] == "collecting"
+    assert updated.json()["state"] == "needs_validation"
     assert updated.json()["actions"][0]["completed_at"] is not None
 
     detail = client.get(f"/cases/{created['id']}")

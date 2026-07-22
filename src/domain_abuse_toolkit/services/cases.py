@@ -269,8 +269,8 @@ class CaseService:
             and all(item.completed_at for item in required_actions)
         ):
             record.state = CaseState.READY_TO_REPORT
-        elif any(item.completed_at for item in record.actions):
-            record.state = CaseState.COLLECTING
+        elif record.criticality_confirmed is not None:
+            record.state = CaseState.QUALIFIED
         else:
             record.state = CaseState.NEEDS_VALIDATION
 

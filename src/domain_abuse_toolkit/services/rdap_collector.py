@@ -243,7 +243,7 @@ class RdapCollector:
                 raise RdapCollectionError(
                     "rdap_http_status",
                     f"The RDAP endpoint returned HTTP status {exchange.status}.",
-                    retryable=exchange.status >= 500,
+                    retryable=exchange.status == 429 or exchange.status >= 500,
                 )
             if exchange.body_skipped_reason or not exchange.body:
                 raise RdapCollectionError(

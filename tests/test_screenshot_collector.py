@@ -100,7 +100,7 @@ def test_screenshot_collector_inlines_collected_css_without_browser_network() ->
     )
 
 
-def test_screenshot_collector_skips_missing_or_truncated_html() -> None:
+def test_screenshot_collector_skips_missing_but_renders_truncated_html() -> None:
     collector = ScreenshotCollector(runner=successful_runner)
     target = normalize_target("https://example.com/")
 
@@ -109,8 +109,13 @@ def test_screenshot_collector_skips_missing_or_truncated_html() -> None:
 
     assert missing.result.status == CollectorStatus.SKIPPED
     assert missing.result.errors[0].code == "capture_source_missing"
-    assert truncated.result.status == CollectorStatus.SKIPPED
-    assert truncated.result.errors[0].code == "capture_source_truncated"
+    assert truncated.result.status == CollectorStatus.PARTIAL
+    assert truncated.result.errors[0].code == "capture_from_truncated_source"
+    assert truncated.result.artifacts == [
+        "10_snapshots/SNP-TEST/capture/desktop.png"
+    ]
+    observations = {item.name: item.value for item in truncated.result.observations}
+    assert observations["source_truncated"] == "true"
 
 
 def test_screenshot_collector_rejects_oversized_input_before_worker() -> None:

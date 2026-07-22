@@ -5,7 +5,8 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
-from domain_abuse_toolkit.models import CaseRecord, CaseState, CollectorStatus
+from domain_abuse_toolkit.models import CaseRecord, CaseState
+from domain_abuse_toolkit.services.collection_assessment import snapshot_outcome
 
 
 @dataclass(frozen=True)
@@ -55,11 +56,12 @@ def build_case_workflow(
         evidence_state = "attention"
         evidence_summary = t("workflow.evidence.attention")
     elif latest_snapshot is not None:
-        evidence_state = (
-            "complete"
-            if latest_snapshot.status == CollectorStatus.COMPLETE
-            else "attention"
-        )
+        outcome = snapshot_outcome(latest_snapshot)
+        evidence_state = {
+            "complete": "complete",
+            "usable_with_limits": "limited",
+            "action_required": "attention",
+        }[outcome]
         evidence_summary = t("workflow.evidence.count", count=len(record.snapshots))
     elif not network_collection_enabled:
         evidence_summary = t("workflow.evidence.disabled")
@@ -99,8 +101,13 @@ def build_case_workflow(
                 date=f"{latest_submission.follow_up_due_at:%Y-%m-%d %H:%M} UTC",
             )
 
-    if job_status in {"queued", "running"} or (
-        network_collection_enabled and latest_snapshot is None
+    evidence_requires_action = bool(
+        latest_snapshot and snapshot_outcome(latest_snapshot) == "action_required"
+    )
+    if (
+        job_status in {"queued", "running"}
+        or (network_collection_enabled and latest_snapshot is None)
+        or evidence_requires_action
     ):
         current_step_id = "evidence"
     elif record.submissions:

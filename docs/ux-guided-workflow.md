@@ -19,6 +19,7 @@ Every step displays exactly one derived state:
 - `to_do` — operator input is required now;
 - `in_progress` — a job or incomplete decision exists;
 - `complete` — the required outcome is recorded;
+- `limited` — the core outcome is usable, while bounded or optional evidence is missing;
 - `attention` — a concrete error or overdue action requires review;
 - `scheduled` — no work is required before the displayed UTC date.
 
@@ -37,7 +38,7 @@ A disabled optional capability is explained inside its step and does not block t
 
 ## Implemented first pass
 
-The case page now uses the five-step rail, a single derived next-best action, one expanded workspace, compact completed-state summaries, a permanent evidence-export action, and a secondary journal. The dashboard/work-queue redesign and richer live job progress remain separate follow-up passes.
+The case page now uses the five-step rail, a single derived next-best action, one expanded workspace, compact completed-state summaries, a permanent evidence-export action, and a secondary journal. A new case opens on Evidence before Qualification. Collection launches open a live progress dialog, may continue in the background, and end with an explicit complete, usable-with-limits, or action-required outcome.
 
 ## Acceptance criteria for the UX pass
 

@@ -89,7 +89,7 @@
               <input type="checkbox" name="confirmed_authorized" value="true" required>
               <span><strong>{{ t("case.evidence.authorized") }}</strong><small>{{ t("case.evidence.scope") }}</small></span>
             </label>
-            <button class="button button-primary" type="submit"{% if latest_collection_job and latest_collection_job.status in ['queued', 'running'] %} disabled{% endif %}>{{ t("case.evidence.start") }}</button>
+            <button class="button button-primary" type="submit"{% if latest_collection_job and latest_collection_job.status in ['queued', 'running'] %} disabled{% endif %}>{{ t("case.evidence.retry") if snapshots else t("case.evidence.start") }}</button>
           </form>
         {% else %}
           <div class="capability-message">
@@ -99,7 +99,27 @@
         {% endif %}
 
         {% if latest_collection_job %}
-          <p class="job-status"><strong>{{ t("case.evidence.last_job", status=latest_collection_job.status) }}</strong><small>{{ latest_collection_job.id }}</small></p>
+          <p class="job-status"><strong>{{ t("case.evidence.last_job", status=t("collector_status." ~ latest_collection_job.status.value)) }}</strong><small>{{ latest_collection_job.id }}</small></p>
+        {% endif %}
+
+        {% if latest_assessment %}
+          <section class="collection-outcome collection-outcome-{{ latest_assessment.outcome }}">
+            <div>
+              <strong>{{ t("case.evidence.result." ~ latest_assessment.outcome ~ ".title") }}</strong>
+              <p>{{ t("case.evidence.result." ~ latest_assessment.outcome ~ ".detail") }}</p>
+            </div>
+            {% if latest_assessment.limitations %}
+              <details>
+                <summary>{{ t("case.evidence.limitations") }} ({{ latest_assessment.limitations|length }})</summary>
+                <ul class="limitation-list">
+                  {% for limitation in latest_assessment.limitations %}
+                    <li><strong>{{ limitation.collector|upper }}</strong><span>{{ t("collection.error." ~ limitation.error.code, default=limitation.error.message) }}</span></li>
+                  {% endfor %}
+                </ul>
+              </details>
+            {% endif %}
+            {% if latest_assessment.can_retry %}<small>{{ t("case.evidence.retry_hint") }}</small>{% endif %}
+          </section>
         {% endif %}
 
         {% if snapshots %}
@@ -109,7 +129,7 @@
               <article class="snapshot-card">
                 <div class="snapshot-heading">
                   <div><strong>{{ t("case.evidence.snapshot", date=snapshot.finished_at.strftime('%Y-%m-%d %H:%M UTC')) }}</strong><small>{{ snapshot.id }}</small></div>
-                  <span class="badge {{ 'badge-safe' if snapshot.status == 'complete' else 'badge-high' }}">{{ snapshot.status }}</span>
+                  <span class="badge {{ 'badge-safe' if snapshot.status == 'complete' else 'badge-high' }}">{{ t("collector_status." ~ snapshot.status.value) }}</span>
                 </div>
                 {% if snapshot.previous_snapshot_id %}
                   <div class="change-summary">
@@ -135,7 +155,7 @@
                         {% endfor %}
                       </div>
                     {% endif %}
-                    {% for error in result.errors %}<div class="alert" role="alert"><strong>{{ error.code }}</strong> · {{ error.message }}</div>{% endfor %}
+                    {% for error in result.errors %}<div class="alert" role="alert"><strong>{{ error.code }}</strong> · {{ t("collection.error." ~ error.code, default=error.message) }}</div>{% endfor %}
                     {% if result.collector == "screenshot" and result.artifacts %}
                       <figure class="capture-preview"><img src="/cases/{{ case.id }}/snapshots/{{ snapshot.id }}/capture.png" alt="{{ t('case.evidence.capture_alt', id=snapshot.id) }}" loading="lazy"><figcaption>{{ t("case.evidence.capture_caption") }}</figcaption></figure>
                     {% endif %}
@@ -271,6 +291,43 @@
       </section>
     </div>
   </div>
+
+  {% if latest_collection_job %}
+    <dialog class="collection-dialog"
+            data-collection-dialog
+            data-auto-open="{{ 'true' if collection_modal_open else 'false' }}"
+            data-status-url="/api/v1/cases/{{ case.id }}/collections/latest"
+            data-complete-message="{{ t('collection.dialog.complete') }}"
+            data-limited-message="{{ t('collection.dialog.usable_with_limits') }}"
+            data-failed-message="{{ t('collection.dialog.action_required') }}"
+            data-status-pending="{{ t('collection.stage.pending') }}"
+            data-status-running="{{ t('collection.stage.running') }}"
+            data-status-complete="{{ t('collection.stage.complete') }}"
+            data-status-warning="{{ t('collection.stage.warning') }}"
+            data-status-failed="{{ t('collection.stage.failed') }}"
+            aria-labelledby="collection-dialog-title">
+      <div class="collection-dialog-heading">
+        <div><p class="eyebrow">{{ case.id }}</p><h2 id="collection-dialog-title">{{ t("collection.dialog.title") }}</h2></div>
+        <span class="collection-live-indicator" data-collection-live aria-hidden="true"></span>
+      </div>
+      <p data-collection-message>{{ t("collection.dialog.running") }}</p>
+      <ol class="collection-progress-list">
+        {% for stage in latest_collection_job.planned_stages %}
+          {% set stage_done = stage in latest_collection_job.completed_stages %}
+          {% set stage_running = stage == latest_collection_job.current_stage %}
+          <li class="collection-stage {{ 'stage-complete' if stage_done else ('stage-running' if stage_running else 'stage-pending') }}" data-collection-stage="{{ stage }}">
+            <span class="collection-stage-marker" aria-hidden="true">{{ '✓' if stage_done else loop.index }}</span>
+            <span><strong>{{ t("collection.stage." ~ stage) }}</strong><small data-stage-status>{{ t("collection.stage.complete") if stage_done else (t("collection.stage.running") if stage_running else t("collection.stage.pending")) }}</small></span>
+          </li>
+        {% endfor %}
+      </ol>
+      <p class="collection-background-note">{{ t("collection.dialog.background") }}</p>
+      <div class="collection-dialog-actions">
+        <button class="button" type="button" data-collection-close>{{ t("collection.dialog.close") }}</button>
+        <a class="button button-primary hidden" href="/cases/{{ case.id }}#evidence" data-collection-finish>{{ t("collection.dialog.view") }}</a>
+      </div>
+    </dialog>
+  {% endif %}
 
   <details id="case-details" class="panel case-details">
     <summary><span><strong>{{ t("case.details.title") }}</strong><small>{{ t("case.details.summary", count=history|length) }}</small></span></summary>

@@ -11,6 +11,7 @@ class CaseState(StrEnum):
     NEW = "new"
     COLLECTING = "collecting"
     NEEDS_VALIDATION = "needs_validation"
+    QUALIFIED = "qualified"
     READY_TO_REPORT = "ready_to_report"
     WAITING_EXTERNAL = "waiting_external"
     FOLLOW_UP_DUE = "follow_up_due"
