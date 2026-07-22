@@ -11,8 +11,8 @@
     </div>
     <div class="case-command-actions">
       <div class="header-status" aria-label="{{ t('case.status') }}">
-        <span class="badge badge-high">{{ t("case.criticality", level=(case.criticality_confirmed or case.criticality_proposed).value|upper) }}</span>
-        <span class="badge">{{ case.state.value|replace('_', ' ') }}</span>
+        <span class="badge badge-high">{{ t("case.criticality", level=t("criticality." ~ (case.criticality_confirmed or case.criticality_proposed).value)) }}</span>
+        <span class="badge">{{ t("state." ~ case.state.value) }}</span>
       </div>
       {% if not integrity_errors %}
         <a class="button" href="/cases/{{ case.id }}/evidence.zip">{{ t("case.export") }}</a>
@@ -61,7 +61,7 @@
         </div>
         <div class="stats-grid case-facts">
           <div class="stat"><span>{{ t("case.brand") }}</span><strong>{{ case.brand }}</strong></div>
-          <div class="stat"><span>{{ t("case.suspicion") }}</span><strong>{{ case.suspicion_type }}</strong></div>
+          <div class="stat"><span>{{ t("case.suspicion") }}</span><strong>{{ t("suspicion." ~ case.suspicion_type|replace(' ', '_'), default=case.suspicion_type) }}</strong></div>
           <div class="stat"><span>{{ t("case.legit") }}</span><strong class="break-anywhere">{{ case.legit_url }}</strong></div>
           <div class="stat"><span>{{ t("case.created") }}</span><strong>{{ case.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</strong></div>
         </div>
@@ -178,7 +178,7 @@
               <label class="decision decision-factual"><input type="checkbox" name="publicly_available"{% if q and q.publicly_available %} checked{% endif %}><span><strong>{{ t("case.qualification.public.title") }}</strong><small>{{ t("case.qualification.public.help") }}</small></span></label>
             </fieldset>
             <div class="grid-two">
-              <label>{{ t("case.qualification.confirmed") }}<select name="confirmed_criticality" required>{% for criticality in criticalities %}<option value="{{ criticality }}"{% if (q and q.confirmed_criticality == criticality) or (not q and case.criticality_proposed == criticality) %} selected{% endif %}>{{ criticality|upper }}</option>{% endfor %}</select></label>
+              <label>{{ t("case.qualification.confirmed") }}<select name="confirmed_criticality" required>{% for criticality in criticalities %}<option value="{{ criticality }}"{% if (q and q.confirmed_criticality == criticality) or (not q and case.criticality_proposed == criticality) %} selected{% endif %}>{{ t("criticality." ~ criticality.value) }}</option>{% endfor %}</select></label>
               <label>{{ t("case.qualification.reviewer") }}<input name="reviewer" required maxlength="80" value="{{ q.reviewer if q else '' }}" placeholder="Ex. MG"></label>
             </div>
             <label>{{ t("case.qualification.reason") }}<textarea name="override_reason" rows="3" maxlength="1000" placeholder="{{ t('case.qualification.reason_help') }}">{{ q.override_reason if q and q.override_reason else '' }}</textarea></label>

@@ -1,3 +1,15 @@
+document.documentElement.classList.add("js");
+
+const languageForm = document.querySelector("[data-language-form]");
+if (languageForm) {
+  const returnField = languageForm.querySelector("[data-language-return]");
+  const languageSelect = languageForm.querySelector("[data-language-select]");
+  languageSelect?.addEventListener("change", () => {
+    if (returnField) returnField.value = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    languageForm.requestSubmit();
+  });
+}
+
 document.addEventListener("click", async (event) => {
   const emailLink = event.target.closest("[data-email-draft]");
   if (emailLink) {
@@ -25,7 +37,7 @@ document.addEventListener("click", async (event) => {
     if (!field) return;
     await navigator.clipboard.writeText(field.value);
     const previous = copyButton.textContent;
-    copyButton.textContent = "Copied";
+    copyButton.textContent = document.body.dataset.copiedLabel || "Copied";
     window.setTimeout(() => { copyButton.textContent = previous; }, 1200);
   }
 

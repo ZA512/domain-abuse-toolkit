@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from importlib.resources import files
 from typing import Any
 
@@ -53,3 +54,15 @@ class Translator:
     @property
     def selected_keys(self) -> frozenset[str]:
         return frozenset(self._selected)
+
+    @staticmethod
+    def available_locales() -> tuple[str, ...]:
+        directory = files("domain_abuse_toolkit.resources").joinpath("i18n")
+        locales = {
+            item.name.removesuffix(".json")
+            for item in directory.iterdir()
+            if item.is_file()
+            and item.name.endswith(".json")
+            and re.fullmatch(r"[a-z]{2}(?:-[A-Z]{2})?\.json", item.name)
+        }
+        return tuple(sorted(locales, key=lambda locale: (locale != "en", locale)))

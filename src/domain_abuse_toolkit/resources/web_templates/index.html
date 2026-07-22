@@ -112,8 +112,8 @@
             {% if review %}<small class="{{ 'overdue-text' if review.overdue else '' }}">{{ t("home.check", status=t("home.due") if review.overdue else t("home.scheduled"), date=review.due_at.strftime('%Y-%m-%d %H:%M UTC')) }}</small>{% endif %}
           </span>
           <span class="case-row-badges">
-            <span class="badge badge-high">{{ case.criticality_proposed }}</span>
-            <span class="badge">{{ case.state }}</span>
+            <span class="badge badge-high">{{ t("criticality." ~ case.criticality_proposed.value) }}</span>
+            <span class="badge">{{ t("state." ~ case.state.value) }}</span>
             {% if review and review.overdue %}<span class="badge badge-high">{{ t("home.check_due") }}</span>{% endif %}
           </span>
         </a>

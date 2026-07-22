@@ -4,7 +4,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
@@ -60,7 +60,13 @@ from domain_abuse_toolkit.services.workflow import build_case_workflow
 settings = get_settings()
 package_root = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=package_root / "resources" / "web_templates")
-translator = Translator(settings.ui_language)
+available_locales = Translator.available_locales()
+translators = {locale: Translator(locale) for locale in available_locales}
+translator = translators[settings.ui_language]
+available_languages = tuple(
+    {"code": locale, "name": item("language.self_name")}
+    for locale, item in translators.items()
+)
 templates.env.globals.update(t=translator, ui_language=translator.locale)
 
 case_service = CaseService(EvidenceStore(settings.data_dir), DraftService())
@@ -116,6 +122,7 @@ collection_jobs = CollectionJobService(
     max_pending_jobs=settings.max_pending_collection_jobs,
 )
 form_csrf_token = secrets.token_urlsafe(32)
+language_cookie_name = "dat_ui_language"
 
 app = FastAPI(
     title="Domain Abuse Toolkit",
@@ -180,6 +187,33 @@ def _verify_form_csrf(token: str) -> None:
         )
 
 
+def _request_translator(request: Request) -> Translator:
+    locale = request.cookies.get(language_cookie_name, settings.ui_language)
+    return translators.get(locale, translator)
+
+
+def _ui_context(request: Request) -> dict[str, object]:
+    selected = _request_translator(request)
+    return {
+        "t": selected,
+        "ui_language": selected.locale,
+        "available_languages": available_languages,
+        "language_return_to": request.url.path,
+    }
+
+
+def _safe_return_path(value: str) -> str:
+    parsed = urlsplit(value)
+    if parsed.scheme or parsed.netloc or not parsed.path.startswith("/"):
+        return "/"
+    path = parsed.path
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+    if parsed.fragment:
+        path = f"{path}#{parsed.fragment}"
+    return path
+
+
 def _case_context(
     request: Request,
     case_id: str,
@@ -187,6 +221,7 @@ def _case_context(
     submission_error: str | None = None,
     collection_error: str | None = None,
 ) -> dict[str, object]:
+    selected_translator = _request_translator(request)
     try:
         record = case_service.get(case_id)
     except CaseNotFoundError as exc:
@@ -242,7 +277,7 @@ def _case_context(
         latest_collection_job=latest_collection_job,
         collection_error=collection_error,
         now=now,
-        translate=translator,
+        translate=selected_translator,
     )
     return {
         "request": request,
@@ -257,7 +292,9 @@ def _case_context(
         "form_csrf_token": form_csrf_token,
         "integrity_errors": integrity_errors,
         "artifact_count": artifact_count,
-        "reporting_channels": reporting_service.channel_views(record, translator),
+        "reporting_channels": reporting_service.channel_views(
+            record, selected_translator
+        ),
         "reporting_summaries": reporting_service.summaries(record),
         "submission_options": reporting_service.submission_options(),
         "latest_submission": record.submissions[-1] if record.submissions else None,
@@ -269,6 +306,7 @@ def _case_context(
         "workflow": workflow,
         "now": now,
         "pilot_notice": True,
+        **_ui_context(request),
     }
 
 
@@ -318,8 +356,30 @@ def home(request: Request):  # type: ignore[no-untyped-def]
             "error": None,
             "form": {},
             "form_csrf_token": form_csrf_token,
+            **_ui_context(request),
         },
     )
+
+
+@app.post("/language")
+def change_language(
+    locale: Annotated[str, Form(max_length=16)],
+    return_to: Annotated[str, Form(max_length=4096)] = "/",
+    csrf_token: Annotated[str, Form(alias="_csrf_token")] = "",
+) -> RedirectResponse:
+    _verify_form_csrf(csrf_token)
+    if locale not in translators:
+        raise HTTPException(status_code=422, detail="Unsupported interface language.")
+    response = RedirectResponse(url=_safe_return_path(return_to), status_code=303)
+    response.set_cookie(
+        key=language_cookie_name,
+        value=locale,
+        max_age=365 * 24 * 60 * 60,
+        httponly=True,
+        samesite="strict",
+        path="/",
+    )
+    return response
 
 
 @app.post("/cases", response_class=HTMLResponse)
@@ -364,6 +424,7 @@ def create_case_form(
                 "error": str(exc),
                 "form": intake.model_dump(mode="json"),
                 "form_csrf_token": form_csrf_token,
+                **_ui_context(request),
             },
             status_code=422,
         )

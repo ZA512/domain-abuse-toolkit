@@ -41,7 +41,55 @@ def test_health_and_home(client: TestClient) -> None:
     home = client.get("/")
     assert home.status_code == 200
     assert "Turn a suspicious URL into an actionable case" in home.text
+    assert '<select id="ui-language" name="locale"' in home.text
+    assert "English" in home.text and "Français" in home.text
     assert home.headers["x-frame-options"] == "DENY"
+
+
+def test_language_can_be_changed_from_the_web_interface(client: TestClient) -> None:
+    csrf_token = _csrf_token(client)
+
+    changed = client.post(
+        "/language",
+        data={
+            "_csrf_token": csrf_token,
+            "locale": "fr",
+            "return_to": "/#reporting",
+        },
+        follow_redirects=False,
+    )
+
+    assert changed.status_code == 303
+    assert changed.headers["location"] == "/#reporting"
+    assert "dat_ui_language=fr" in changed.headers["set-cookie"]
+    french = client.get("/")
+    assert '<html lang="fr">' in french.text
+    assert "Transformez une URL suspecte en dossier exploitable" in french.text
+    assert "Copié" in french.text
+
+
+def test_language_change_rejects_invalid_input_and_external_redirects(
+    client: TestClient,
+) -> None:
+    csrf_token = _csrf_token(client)
+    unsupported = client.post(
+        "/language",
+        data={"_csrf_token": csrf_token, "locale": "xx", "return_to": "/"},
+        follow_redirects=False,
+    )
+    safe_redirect = client.post(
+        "/language",
+        data={
+            "_csrf_token": csrf_token,
+            "locale": "en",
+            "return_to": "https://attacker.example/",
+        },
+        follow_redirects=False,
+    )
+
+    assert unsupported.status_code == 422
+    assert safe_redirect.status_code == 303
+    assert safe_redirect.headers["location"] == "/"
 
 
 def test_dns_collection_is_disabled_by_default_and_requires_opt_in(

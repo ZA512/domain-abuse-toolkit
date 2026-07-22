@@ -78,8 +78,9 @@ The Docker safe-mode launcher is the target local runtime. The WSL network launc
 
 ### Interface language
 
-The interface uses English by default and intentionally has no in-product language
-selector. Choose a deployment language at startup instead:
+The interface uses English by default. Use the language selector in the page header;
+the choice is stored locally in the browser. A deployment can also choose its initial
+language at startup:
 
 ```powershell
 PowerShell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-toolkit.ps1 -UiLanguage fr
@@ -87,8 +88,9 @@ PowerShell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-toolkit.ps1 
 
 Docker Compose reads `DAT_UI_LANGUAGE` (`en` by default). Translation catalogues live
 under `src/domain_abuse_toolkit/resources/i18n/`: copy `en.json`, keep the same keys,
-translate the values, then start with the new locale code. Missing keys fall back to
-English; an absent or invalid catalogue stops startup with an explicit error.
+translate the values, and set `language.self_name`. The web selector discovers the new
+locale automatically. Missing keys fall back to English; an absent or invalid startup
+catalogue stops startup with an explicit error.
 
 ### Manual Python setup
 

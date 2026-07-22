@@ -13,6 +13,7 @@ def test_english_is_reference_and_french_catalogue_is_complete() -> None:
     assert english("home.create") == "Create a case"
     assert french("home.create") == "Créer un dossier"
     assert french.selected_keys == english.reference_keys
+    assert Translator.available_locales() == ("en", "fr")
 
 
 def test_selected_catalogue_falls_back_to_english_for_a_missing_key() -> None:
