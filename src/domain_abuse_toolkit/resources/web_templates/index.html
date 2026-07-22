@@ -101,20 +101,26 @@
         <span><strong>{{ case_counts.needs_validation }}</strong> {{ t("home.need_validation") }}</span>
         <span><strong>{{ case_counts.critical }}</strong> {{ t("home.critical") }}</span>
         <span><strong>{{ case_counts.technical_due }}</strong> {{ t("home.checks_due") }}</span>
+        <span><strong>{{ case_counts.actions_due }}</strong> {{ t("home.actions_due") }}</span>
       </div>
       {% for case in cases %}
         {% set review = case_review_status[case.id] %}
+        {% set operational = case_operational_status[case.id] %}
         <a class="case-row" href="/cases/{{ case.id }}">
           <span>
             <strong>{{ case.brand }} · {{ case.target.registrable_domain }}</strong>
             <small>{{ case.id }} · {{ case.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</small>
             <small class="break-anywhere">{{ case.target.normalized_url }}</small>
             {% if review %}<small class="{{ 'overdue-text' if review.overdue else '' }}">{{ t("home.check", status=t("home.due") if review.overdue else t("home.scheduled"), date=review.due_at.strftime('%Y-%m-%d %H:%M UTC')) }}</small>{% endif %}
+            {% if operational.next_action %}<small class="case-next-action {{ 'overdue-text' if operational.next_action.overdue else '' }}">{{ t("home.next_action", action=t(operational.next_action.title_key), date=operational.next_action.due_at.strftime('%Y-%m-%d %H:%M UTC')) }}</small>{% endif %}
+            {% if operational.monitoring_due_at %}<small>{{ t("home.monitoring_due", date=operational.monitoring_due_at.strftime('%Y-%m-%d %H:%M UTC')) }}</small>{% endif %}
           </span>
           <span class="case-row-badges">
             <span class="badge badge-high">{{ t("criticality." ~ case.criticality_proposed.value) }}</span>
+            <span class="badge availability-{{ operational.availability.state }}">{{ t("availability." ~ operational.availability.state) }}</span>
             <span class="badge">{{ t("state." ~ case.state.value) }}</span>
             {% if review and review.overdue %}<span class="badge badge-high">{{ t("home.check_due") }}</span>{% endif %}
+            {% if operational.next_action and operational.next_action.overdue %}<span class="badge badge-high">{{ t("home.action_due") }}</span>{% endif %}
           </span>
         </a>
       {% endfor %}

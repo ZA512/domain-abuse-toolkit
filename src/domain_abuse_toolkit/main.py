@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
@@ -18,11 +19,14 @@ from domain_abuse_toolkit.models import (
     ActionEvent,
     ActionUpdate,
     CaseCreate,
+    CaseState,
     CollectionStart,
     CollectorStatus,
     Criticality,
     Draft,
     ManualEvidenceEvent,
+    MonitoringEvent,
+    MonitoringUpdate,
     QualificationEvent,
     QualificationSubmission,
     SnapshotEvent,
@@ -51,7 +55,13 @@ from domain_abuse_toolkit.services.collectors import DnsCollector
 from domain_abuse_toolkit.services.drafts import DraftService
 from domain_abuse_toolkit.services.evidence import EvidenceStore, EvidenceStoreError
 from domain_abuse_toolkit.services.exports import EvidenceExportService
+from domain_abuse_toolkit.services.follow_up import (
+    availability_status,
+    next_monitoring_due_at,
+    next_process_action,
+)
 from domain_abuse_toolkit.services.i18n import Translator
+from domain_abuse_toolkit.services.monitoring import MonitoringScheduler
 from domain_abuse_toolkit.services.rdap_collector import RdapCollector
 from domain_abuse_toolkit.services.reporting import (
     ReportingCatalogueError,
@@ -129,13 +139,29 @@ collection_jobs = CollectionJobService(
     ),
     max_pending_jobs=settings.max_pending_collection_jobs,
 )
+monitoring_scheduler = MonitoringScheduler(
+    case_service,
+    collection_jobs,
+    enabled=settings.enable_network_collection,
+)
 form_csrf_token = secrets.token_urlsafe(32)
 language_cookie_name = "dat_ui_language"
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):  # type: ignore[no-untyped-def]
+    monitoring_scheduler.start()
+    try:
+        yield
+    finally:
+        monitoring_scheduler.stop()
+
 
 app = FastAPI(
     title="Domain Abuse Toolkit",
     version=__version__,
     description="Human-in-the-loop case intake and evidence preparation.",
+    lifespan=lifespan,
 )
 app.mount(
     "/static",
@@ -272,6 +298,7 @@ def _case_context(
     submission_error: str | None = None,
     collection_error: str | None = None,
     manual_evidence_error: str | None = None,
+    monitoring_error: str | None = None,
 ) -> dict[str, object]:
     selected_translator = _request_translator(request)
     try:
@@ -330,6 +357,8 @@ def _case_context(
             history.append({"kind": "snapshot", "event": event})
         elif isinstance(event, ManualEvidenceEvent):
             history.append({"kind": "manual_evidence", "event": event})
+        elif isinstance(event, MonitoringEvent):
+            history.append({"kind": "monitoring", "event": event})
         else:
             history.append({"kind": "submission", "event": event})
     integrity_errors = case_service.evidence_store.verify_case(case_id)
@@ -372,6 +401,9 @@ def _case_context(
         now=now,
         translate=selected_translator,
     )
+    availability = availability_status(record)
+    process_action = next_process_action(record, now)
+    monitoring_due_at = next_monitoring_due_at(record)
     return {
         "request": request,
         "case": record,
@@ -383,6 +415,7 @@ def _case_context(
         "submission_error": submission_error,
         "collection_error": collection_error,
         "manual_evidence_error": manual_evidence_error,
+        "monitoring_error": monitoring_error,
         "form_csrf_token": form_csrf_token,
         "integrity_errors": integrity_errors,
         "artifact_count": artifact_count,
@@ -414,6 +447,9 @@ def _case_context(
             == latest_collection_job.id
         ),
         "technical_review": technical_review,
+        "availability": availability,
+        "process_action": process_action,
+        "monitoring_due_at": monitoring_due_at,
         "snapshots": list(reversed(record.snapshots)),
         "capabilities": capabilities,
         "workflow": workflow,
@@ -431,6 +467,17 @@ def _technical_review_status(case: object, now: datetime) -> dict[str, object] |
     return {"due_at": due_at, "overdue": due_at <= now}
 
 
+def _display_process_action(case: object, now: datetime):  # type: ignore[no-untyped-def]
+    if case.qualification is None or case.state in {
+        CaseState.MITIGATED,
+        CaseState.CLOSED,
+        CaseState.FALSE_POSITIVE,
+        CaseState.TRANSFERRED,
+    }:
+        return None
+    return next_process_action(case, now)
+
+
 def _case_counts(cases: list[object]) -> dict[str, int]:
     now = datetime.now(UTC)
     return {
@@ -441,6 +488,11 @@ def _case_counts(cases: list[object]) -> dict[str, int]:
             bool(status and status["overdue"])
             for case in cases
             if (status := _technical_review_status(case, now)) is not None
+        ),
+        "actions_due": sum(
+            bool(action and action.overdue)
+            for case in cases
+            if (action := _display_process_action(case, now)) is not None
         ),
     }
 
@@ -454,6 +506,14 @@ def health() -> dict[str, str]:
 def home(request: Request):  # type: ignore[no-untyped-def]
     cases = case_service.list()
     now = datetime.now(UTC)
+    operational_status = {
+        case.id: {
+            "availability": availability_status(case),
+            "next_action": _display_process_action(case, now),
+            "monitoring_due_at": next_monitoring_due_at(case),
+        }
+        for case in cases
+    }
     return templates.TemplateResponse(
         request=request,
         name="index.html",
@@ -463,6 +523,7 @@ def home(request: Request):  # type: ignore[no-untyped-def]
             "case_review_status": {
                 case.id: _technical_review_status(case, now) for case in cases
             },
+            "case_operational_status": operational_status,
             "case_counts": _case_counts(cases),
             "capabilities": case_service.capabilities(settings),
             "load_warnings": case_service.load_warnings,
@@ -522,6 +583,14 @@ def create_case_form(
     except TargetValidationError as exc:
         cases = case_service.list()
         now = datetime.now(UTC)
+        operational_status = {
+            case.id: {
+                "availability": availability_status(case),
+                "next_action": _display_process_action(case, now),
+                "monitoring_due_at": next_monitoring_due_at(case),
+            }
+            for case in cases
+        }
         return templates.TemplateResponse(
             request=request,
             name="index.html",
@@ -531,6 +600,7 @@ def create_case_form(
                 "case_review_status": {
                     case.id: _technical_review_status(case, now) for case in cases
                 },
+                "case_operational_status": operational_status,
                 "case_counts": _case_counts(cases),
                 "capabilities": case_service.capabilities(settings),
                 "load_warnings": case_service.load_warnings,
@@ -552,6 +622,7 @@ def case_detail(
     submission_error: str | None = None,
     collection_error: str | None = None,
     manual_evidence_error: str | None = None,
+    monitoring_error: str | None = None,
 ):  # type: ignore[no-untyped-def]
     return templates.TemplateResponse(
         request=request,
@@ -563,8 +634,48 @@ def case_detail(
             submission_error,
             collection_error,
             manual_evidence_error,
+            monitoring_error,
         ),
     )
+
+
+@app.post("/cases/{case_id}/monitoring")
+def configure_monitoring_form(
+    case_id: str,
+    enabled: Annotated[bool, Form()],
+    interval_hours: Annotated[int, Form(ge=6, le=168)] = 24,
+    confirmed_authorized: Annotated[bool, Form()] = False,
+    csrf_token: Annotated[str, Form(alias="_csrf_token")] = "",
+) -> RedirectResponse:
+    _verify_form_csrf(csrf_token)
+    try:
+        if enabled and not settings.enable_network_collection:
+            raise ValueError("Network collection is disabled in this server process.")
+        case_service.configure_monitoring(
+            case_id,
+            MonitoringUpdate(
+                enabled=enabled,
+                interval_hours=interval_hours,
+                confirmed_authorized=confirmed_authorized,
+            ),
+        )
+        if enabled:
+            monitoring_scheduler.poll_once()
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Case not found") from exc
+    except (ValidationError, ValueError) as exc:
+        if isinstance(exc, ValidationError):
+            message = str(exc.errors(include_url=False)[0]["msg"])
+        else:
+            message = str(exc)
+        return RedirectResponse(
+            url=(
+                f"/cases/{case_id}?monitoring_error={quote(message, safe='')}"
+                "#follow-up"
+            ),
+            status_code=303,
+        )
+    return RedirectResponse(url=f"/cases/{case_id}#follow-up", status_code=303)
 
 
 @app.post("/cases/{case_id}/evidence/manual-rdap")

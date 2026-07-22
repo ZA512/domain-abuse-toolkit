@@ -369,15 +369,50 @@
           <div><p class="eyebrow">{{ t("case.step", number=5) }}</p><h2>{{ t("case.follow_up.title") }}</h2></div>
           {% set follow_step = workflow.steps[4] %}<span class="badge workflow-badge-{{ follow_step.state }}">{{ follow_step.state_label }}</span>
         </div>
+        <div class="follow-up-dashboard">
+          <article class="availability-card availability-card-{{ availability.state }}">
+            <div><p class="eyebrow">{{ t("case.follow_up.availability") }}</p><h3>{{ t("availability." ~ availability.state) }}{% if availability.http_status %} · HTTP {{ availability.http_status }}{% endif %}</h3></div>
+            {% if availability.checked_at %}<small>{{ t("case.follow_up.checked_at", date=availability.checked_at.strftime('%Y-%m-%d %H:%M UTC')) }}</small>{% else %}<small>{{ t("case.follow_up.never_checked") }}</small>{% endif %}
+            <p>{{ t("case.follow_up.availability_help") }}</p>
+          </article>
+          {% if latest_submission %}
+            <article class="next-process-action {{ 'action-due' if process_action.overdue else '' }}">
+              <div class="next-process-heading"><span class="badge">{{ process_action.phase|upper }}</span><span class="badge {{ 'badge-high' if process_action.overdue else 'badge-safe' }}">{{ t("case.follow_up.act_now") if process_action.overdue else t("case.follow_up.planned") }}</span></div>
+              <p class="eyebrow">{{ t("case.follow_up.next") }}</p>
+              <h3>{{ t(process_action.title_key) }}</h3>
+              <p>{{ t(process_action.detail_key) }}</p>
+              <strong>{{ process_action.due_at.strftime('%Y-%m-%d %H:%M') }} UTC</strong>
+              <a class="button button-primary" href="{{ '#evidence' if process_action.code == 'confirm_mitigation' else '#reporting' }}" data-workflow-link>{{ t("case.follow_up.prepare_action") }}</a>
+            </article>
+          {% endif %}
+        </div>
+
+        <section class="monitoring-panel">
+          <div class="monitoring-heading"><div><p class="eyebrow">{{ t("case.monitoring.eyebrow") }}</p><h3>{{ t("case.monitoring.title") }}</h3></div><span class="badge {{ 'badge-safe' if case.monitoring_enabled else '' }}">{{ t("case.monitoring.active") if case.monitoring_enabled else t("case.monitoring.inactive") }}</span></div>
+          <p>{{ t("case.monitoring.help") }}</p>
+          {% if monitoring_error %}<div class="alert" role="alert">{{ monitoring_error }}</div>{% endif %}
+          {% if case.monitoring_enabled %}
+            <div class="monitoring-status"><strong>{{ t("case.monitoring.next_check") }}</strong><span>{{ monitoring_due_at.strftime('%Y-%m-%d %H:%M UTC') if monitoring_due_at else t("case.monitoring.pending") }}</span><small>{{ t("case.monitoring.interval", hours=case.monitoring_interval_hours) }}</small></div>
+          {% endif %}
+          {% if capabilities.network_collection %}
+            <form method="post" action="/cases/{{ case.id }}/monitoring" class="monitoring-form">
+              <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
+              <input type="hidden" name="enabled" value="true">
+              <label>{{ t("case.monitoring.frequency") }}<select name="interval_hours">{% for hours in (6, 12, 24, 72, 168) %}<option value="{{ hours }}"{% if case.monitoring_interval_hours == hours %} selected{% endif %}>{{ t("case.monitoring.hours", hours=hours) }}</option>{% endfor %}</select></label>
+              <label class="confirmation-check"><input type="checkbox" name="confirmed_authorized" value="true" required><span>{{ t("case.monitoring.confirm") }}</span></label>
+              <button class="button button-primary" type="submit">{{ t("case.monitoring.update") if case.monitoring_enabled else t("case.monitoring.enable") }}</button>
+            </form>
+            {% if case.monitoring_enabled %}<form method="post" action="/cases/{{ case.id }}/monitoring" class="monitoring-disable"><input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}"><input type="hidden" name="enabled" value="false"><input type="hidden" name="interval_hours" value="{{ case.monitoring_interval_hours }}"><button class="button" type="submit">{{ t("case.monitoring.disable") }}</button></form>{% endif %}
+          {% else %}
+            <p class="callout">{{ t("case.monitoring.network_disabled") }}</p>
+          {% endif %}
+          <small class="monitoring-runtime-note">{{ t("case.monitoring.runtime_note") }}</small>
+        </section>
+
         {% if latest_submission %}
-          <div class="follow-up-focus {{ 'review-overdue' if latest_submission.follow_up_due_at <= now else '' }}">
-            <p class="eyebrow">{{ t("case.follow_up.next") }}</p>
-            <strong>{{ latest_submission.follow_up_due_at.strftime('%Y-%m-%d %H:%M') }} UTC</strong>
-            <span>{{ t("case.follow_up.due_now") if latest_submission.follow_up_due_at <= now else t("case.follow_up.not_due") }}</span>
-          </div>
           <div class="submission-list">
             {% for submission in case.submissions|reverse %}
-              <article><div><strong>{{ submission.channel_name }}</strong><small>{{ t("case.follow_up.sent", date=submission.occurred_at.strftime('%Y-%m-%d %H:%M UTC')) }}</small></div><div>{% if submission.external_reference %}<strong>{{ submission.external_reference }}</strong>{% else %}<span>{{ t("case.follow_up.no_reference") }}</span>{% endif %}<small>{{ t("case.follow_up.reminder", date=submission.follow_up_due_at.strftime('%Y-%m-%d %H:%M UTC')) }}</small></div></article>
+              <article><div><strong>{{ submission.channel_name }}</strong><small>{{ t("case.follow_up.sent", date=submission.occurred_at.strftime('%Y-%m-%d %H:%M UTC')) }}</small></div><div>{% if submission.external_reference %}<strong>{{ submission.external_reference }}</strong>{% else %}<span>{{ t("case.follow_up.no_reference") }}</span>{% endif %}</div></article>
             {% endfor %}
           </div>
         {% else %}
@@ -441,6 +476,7 @@
                 {% elif item.kind == "qualification" %}<strong>{{ t("case.details.qualification", level=item.event.confirmed_criticality|upper) }}</strong><span class="timeline-detail">{{ t("case.details.reviewed", reviewer=item.event.reviewer) }}</span>
                 {% elif item.kind == "submission" %}<strong>{{ t("case.details.report", channel=item.event.channel_name) }}</strong><span class="timeline-detail">{{ t("case.details.reminder", date=item.event.follow_up_due_at.strftime('%Y-%m-%d %H:%M UTC')) }}</span>
                 {% elif item.kind == "manual_evidence" %}<strong>{{ t("case.details.manual_evidence") }}</strong><span class="timeline-detail">{{ t("case.evidence.manual_rdap.by", operator=item.event.operator) }}</span>
+                {% elif item.kind == "monitoring" %}<strong>{{ t("case.details.monitoring", status=t("case.details.monitoring_enabled") if item.event.enabled else t("case.details.monitoring_disabled"), hours=item.event.interval_hours) }}</strong>
                 {% else %}<strong>{{ t("case.details.snapshot", status=item.event.status|upper) }}</strong>{% endif %}
                 <small>{{ item.event.occurred_at.strftime('%d/%m/%Y %H:%M:%S') }} UTC · {{ item.event.id }}</small>
               </div></li>

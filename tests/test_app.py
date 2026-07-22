@@ -688,6 +688,41 @@ def test_reporting_page_orders_operational_channels_by_priority(
     assert "ICANN Contractual Compliance" in detail.text
 
 
+def test_monitoring_form_requires_authorization_and_renders_schedule(
+    client: TestClient, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    main_module = importlib.import_module("domain_abuse_toolkit.main")
+    monkeypatch.setattr(main_module.settings, "enable_network_collection", True)
+    monkeypatch.setattr(main_module.monitoring_scheduler, "poll_once", lambda: [])
+    created = client.post(
+        "/api/v1/cases",
+        json={
+            "target": "https://monitor.example.net/",
+            "brand": "Example Brand",
+            "legit_url": "https://www.example.com/",
+        },
+    ).json()
+    case_path = f"/cases/{created['id']}"
+    endpoint = f"{case_path}/monitoring"
+    payload = {
+        "enabled": "true",
+        "interval_hours": "24",
+        "_csrf_token": _csrf_token(client, case_path),
+    }
+
+    rejected = client.post(endpoint, data=payload, follow_redirects=False)
+    assert rejected.status_code == 303
+    assert "monitoring_error=" in rejected.headers["location"]
+
+    payload["confirmed_authorized"] = "true"
+    enabled = client.post(endpoint, data=payload, follow_redirects=False)
+    assert enabled.status_code == 303
+    detail = client.get(case_path)
+    assert "Scheduled UP/DOWN checks" in detail.text
+    assert "Next automatic check" in detail.text
+    assert "Every 24 hours" in detail.text
+
+
 def test_evidence_archive_download_has_manifest_and_integrity_headers(
     client: TestClient,
 ) -> None:

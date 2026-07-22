@@ -70,6 +70,7 @@ class CollectionJobView(BaseModel):
     current_stage: str = "queued"
     planned_stages: list[str] = Field(default_factory=list)
     completed_stages: list[str] = Field(default_factory=list)
+    trigger: str = "manual"
 
 
 class CollectionJobService:
@@ -113,8 +114,23 @@ class CollectionJobService:
         stages.append("persisting")
         return self._start(case_id, self._run_passive, stages)
 
+    def start_monitor(self, case_id: str) -> CollectionJobView:
+        if self.web_collector is None:
+            raise ValueError("The HTTP/TLS collector is not configured.")
+        return self._start(
+            case_id,
+            self._run_monitor,
+            ["dns", "http_tls", "persisting"],
+            trigger="scheduled",
+        )
+
     def _start(
-        self, case_id: str, worker, planned_stages: list[str]
+        self,
+        case_id: str,
+        worker,
+        planned_stages: list[str],
+        *,
+        trigger: str = "manual",
     ) -> CollectionJobView:  # type: ignore[no-untyped-def]
         record = self.case_service.get(case_id)
         with self._lock:
@@ -142,6 +158,7 @@ class CollectionJobService:
                 status=CollectorStatus.QUEUED,
                 queued_at=datetime.now(UTC),
                 planned_stages=planned_stages,
+                trigger=trigger,
             )
             self._jobs[job.id] = job
             future = self._executor.submit(worker, job.id, record.target.model_copy(deep=True))
@@ -172,6 +189,14 @@ class CollectionJobService:
         self._persist(job_id, [output.result], output.artifacts)
 
     def _run_passive(self, job_id: str, target: NormalizedTarget) -> None:
+        self._run_passive_collection(job_id, target, include_optional=True)
+
+    def _run_monitor(self, job_id: str, target: NormalizedTarget) -> None:
+        self._run_passive_collection(job_id, target, include_optional=False)
+
+    def _run_passive_collection(
+        self, job_id: str, target: NormalizedTarget, *, include_optional: bool
+    ) -> None:
         self._update(
             job_id,
             status=CollectorStatus.RUNNING,
@@ -241,7 +266,7 @@ class CollectionJobService:
             results.extend(web_output.results)
             artifacts.extend(web_output.artifacts)
 
-        if self.rdap_collector is not None:
+        if include_optional and self.rdap_collector is not None:
             self._advance(job_id, completed="http_tls", current="rdap")
             try:
                 rdap_output = self.rdap_collector.collect(target, job.snapshot_id)
@@ -260,7 +285,7 @@ class CollectionJobService:
         else:
             self._advance(job_id, completed="http_tls", current=None)
 
-        if self.screenshot_collector is not None:
+        if include_optional and self.screenshot_collector is not None:
             previous_stage = "rdap" if self.rdap_collector is not None else None
             self._advance(job_id, completed=previous_stage, current="screenshot")
             source_artifact = next(
@@ -301,7 +326,11 @@ class CollectionJobService:
             artifacts.extend(screenshot_output.artifacts)
             self._advance(job_id, completed="screenshot", current="persisting")
         else:
-            previous_stage = "rdap" if self.rdap_collector is not None else "http_tls"
+            previous_stage = (
+                "rdap"
+                if include_optional and self.rdap_collector is not None
+                else "http_tls"
+            )
             self._advance(job_id, completed=previous_stage, current="persisting")
         self._persist(job_id, results, artifacts)
 
@@ -322,6 +351,7 @@ class CollectionJobService:
             id=job.snapshot_id,
             case_id=job.case_id,
             status=status,
+            trigger=job.trigger,
             started_at=started_at,
             finished_at=finished_at,
             results=results,

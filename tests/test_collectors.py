@@ -302,6 +302,34 @@ def test_collection_job_persists_snapshot_and_survives_restart(tmp_path) -> None
     assert len(restarted.history(case.id)) == 1
 
 
+def test_scheduled_monitor_collects_only_dns_http_and_tls(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    service = CaseService(EvidenceStore(tmp_path), DraftService())
+    case = service.create(
+        CaseCreate(
+            target="https://login.example.net/",
+            brand="Example Brand",
+            legit_url="https://www.example.com/",
+        )
+    )
+    jobs = CollectionJobService(
+        service,
+        SuccessfulCollector(),
+        SuccessfulWebCollector(),
+        SuccessfulRdapCollector(),
+        SuccessfulScreenshotCollector(),
+    )
+
+    finished = jobs.wait(jobs.start_monitor(case.id).id)
+
+    assert finished.trigger == "scheduled"
+    assert case.snapshots[-1].trigger == "scheduled"
+    assert {result.collector for result in case.snapshots[-1].results} == {
+        "dns",
+        "http",
+        "tls",
+    }
+
+
 def test_collection_job_records_diff_and_next_manual_review(tmp_path) -> None:  # type: ignore[no-untyped-def]
     service = CaseService(EvidenceStore(tmp_path), DraftService())
     case = service.create(
@@ -324,7 +352,7 @@ def test_collection_job_records_diff_and_next_manual_review(tmp_path) -> None:  
     assert latest.changes[0].record_type == "A"
     assert latest.changes[0].before == ["8.8.8.8"]
     assert latest.changes[0].after == ["1.1.1.1"]
-    assert latest.next_check_due_at == latest.finished_at + timedelta(hours=72)
+    assert latest.next_check_due_at == latest.finished_at + timedelta(hours=168)
 
     restarted = CaseService(EvidenceStore(tmp_path), DraftService())
     restored = restarted.get(case.id).snapshots[-1]

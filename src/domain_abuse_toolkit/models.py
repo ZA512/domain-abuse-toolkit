@@ -114,6 +114,21 @@ class CollectionStart(BaseModel):
     confirmed_authorized: bool = False
 
 
+class MonitoringUpdate(BaseModel):
+    enabled: bool
+    confirmed_authorized: bool = False
+    interval_hours: int = Field(default=24, ge=6, le=168)
+
+
+class MonitoringEvent(BaseModel):
+    id: str
+    case_id: str
+    event_type: Literal["monitoring_configured"] = "monitoring_configured"
+    enabled: bool
+    interval_hours: int = Field(ge=6, le=168)
+    occurred_at: datetime
+
+
 class QualificationSubmission(BaseModel):
     brand_represented: bool
     copied_elements: bool
@@ -247,7 +262,7 @@ class SnapshotEvent(BaseModel):
     id: str
     case_id: str
     event_type: Literal["snapshot_recorded"] = "snapshot_recorded"
-    trigger: Literal["manual"] = "manual"
+    trigger: Literal["manual", "scheduled"] = "manual"
     status: CollectorStatus
     started_at: datetime
     finished_at: datetime
@@ -283,6 +298,9 @@ class CaseRecord(BaseModel):
     submissions: list[SubmissionEvent] = Field(default_factory=list)
     manual_evidence: list[ManualEvidenceEvent] = Field(default_factory=list)
     snapshots: list[SnapshotEvent] = Field(default_factory=list)
+    monitoring_enabled: bool = False
+    monitoring_interval_hours: int = Field(default=24, ge=6, le=168)
+    monitoring_authorized_at: datetime | None = None
     actions: list[SuggestedAction]
     drafts: list[Draft]
     created_at: datetime

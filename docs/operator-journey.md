@@ -110,6 +110,25 @@ The local pilot implements the channel, destination, reference, notes, immutable
 
 ## Screen 7 — Follow-up review
 
+The page leads with the latest bounded HTTP availability signal and the exact next
+process action. `UP` means an HTTP response was received; it does not prove that the
+fraudulent content is still present. `Probably DOWN` means the HTTP connection failed
+and must be confirmed by a human.
+
+The standard high-severity cadence is:
+
+- initial registrar report at J0/J1;
+- first registrar reminder at J+7 if the site remains active;
+- strengthened reminder and escalation preparation at J+14/J+15;
+- TLD registry escalation at J+15/J+21;
+- ICANN, authority, or legal escalation at J+21/J+30;
+- closure or transfer at J+30.
+
+The operator can separately authorize recurring DNS/HTTP/TLS checks for the case.
+The local scheduler runs while the application is open, preserves its configuration,
+and catches up an overdue check after restart. It does not run RDAP, screenshots,
+JavaScript, forms, or external messages.
+
 At the due date, the application launches or offers a new snapshot. The page leads with changes:
 
 - active/inactive state;

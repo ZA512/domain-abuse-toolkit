@@ -12,8 +12,8 @@ from domain_abuse_toolkit.models import (
 
 _REVIEW_HOURS = {
     Criticality.CRITICAL: 24,
-    Criticality.HIGH: 72,
-    Criticality.CAMPAIGN: 72,
+    Criticality.HIGH: 168,
+    Criticality.CAMPAIGN: 24,
     Criticality.LOW: 168,
 }
 

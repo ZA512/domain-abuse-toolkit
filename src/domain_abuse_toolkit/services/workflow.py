@@ -7,6 +7,7 @@ from typing import Any
 
 from domain_abuse_toolkit.models import CaseRecord, CaseState
 from domain_abuse_toolkit.services.collection_assessment import snapshot_outcome
+from domain_abuse_toolkit.services.follow_up import next_process_action
 
 
 @dataclass(frozen=True)
@@ -91,14 +92,19 @@ def build_case_workflow(
         follow_up_state = "complete"
         follow_up_summary = t("workflow.follow_up.complete")
     elif latest_submission:
-        if latest_submission.follow_up_due_at <= current_time:
+        process_action = next_process_action(record, current_time)
+        action_title = t(process_action.title_key)
+        if process_action.overdue:
             follow_up_state = "attention"
-            follow_up_summary = t("workflow.follow_up.due")
+            follow_up_summary = t(
+                "workflow.follow_up.due_action", action=action_title
+            )
         else:
             follow_up_state = "scheduled"
             follow_up_summary = t(
-                "workflow.follow_up.scheduled",
-                date=f"{latest_submission.follow_up_due_at:%Y-%m-%d %H:%M} UTC",
+                "workflow.follow_up.scheduled_action",
+                action=action_title,
+                date=f"{process_action.due_at:%Y-%m-%d %H:%M} UTC",
             )
 
     evidence_requires_action = bool(

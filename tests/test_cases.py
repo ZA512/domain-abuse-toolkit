@@ -7,6 +7,7 @@ from domain_abuse_toolkit.models import (
     CaseCreate,
     CaseState,
     Criticality,
+    MonitoringUpdate,
     QualificationSubmission,
     SubmissionCreate,
     Urgency,
@@ -255,3 +256,35 @@ def test_submission_schedules_follow_up_and_survives_restart(tmp_path) -> None: 
     assert restored.submissions[0].external_reference == "TEST-123"
     assert len(restarted.history(case.id)) == 1
     assert restarted.evidence_store.verify_case(case.id) == []
+
+
+def test_scheduled_monitoring_requires_authorization_and_survives_restart(
+    tmp_path,
+) -> None:  # type: ignore[no-untyped-def]
+    service = CaseService(EvidenceStore(tmp_path), DraftService())
+    case = service.create(
+        CaseCreate(
+            target="https://login.example.net/",
+            brand="Example Brand",
+            legit_url="https://www.example.com/",
+        )
+    )
+
+    with pytest.raises(ValueError, match="authorization"):
+        service.configure_monitoring(
+            case.id,
+            MonitoringUpdate(enabled=True, interval_hours=24),
+        )
+    service.configure_monitoring(
+        case.id,
+        MonitoringUpdate(
+            enabled=True,
+            confirmed_authorized=True,
+            interval_hours=12,
+        ),
+    )
+
+    restored = CaseService(EvidenceStore(tmp_path), DraftService()).get(case.id)
+    assert restored.monitoring_enabled is True
+    assert restored.monitoring_interval_hours == 12
+    assert restored.monitoring_authorized_at is not None

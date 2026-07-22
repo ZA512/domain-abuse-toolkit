@@ -29,7 +29,7 @@
 
 ### Snapshot
 
-One collection run for a case. It records trigger, policy version, tool version, start/end, status, the set of collector results, its previous snapshot, normalized changes, and the next operator review date. Snapshots are append-only. The local pilot calculates a review date from criticality but does not launch collection automatically.
+One collection run for a case. It records trigger (`manual` or `scheduled`), policy version, tool version, start/end, status, the set of collector results, its previous snapshot, normalized changes, and the next operator review date. Snapshots are append-only. A scheduled availability snapshot contains only bounded DNS/HTTP/TLS collectors and requires an active case-level authorization.
 
 ### Snapshot change
 
@@ -73,6 +73,13 @@ A party represents an organization or internal team. A reporting channel represe
 ### Submission event
 
 An immutable operator confirmation that an external report was sent. It records the selected channel, destination, external reference, factual notes, occurrence time, and calculated follow-up date. It never implies that the toolkit sent or that the recipient accepted the report.
+
+### Monitoring event
+
+An immutable operator decision that enables, updates, or disables recurring availability
+checks for one case. It records the interval and decision time. Enabling requires an
+explicit continuous-authorization confirmation. The current case projection also keeps
+the enabled state, interval, and authorization time used to calculate the next due check.
 
 ### Campaign
 

@@ -34,6 +34,12 @@ Shared deployment must additionally use egress firewall rules that prevent acces
 
 The local pilot keeps network collection disabled unless started with the dedicated opt-in launcher. A separate case-page confirmation starts a bounded job for `A`, `AAAA`, `CNAME`, `MX`, `NS`, and `TXT` records. Per-query timeout, total query lifetime, record count, worker concurrency, one-running-job-per-case, and the global pending queue are bounded. Any private, loopback, link-local, reserved, multicast, or otherwise non-global address makes the snapshot fail and blocks its use by later connection-based collectors. Error messages do not repeat the prohibited address.
 
+Recurring availability checks require a separate case-level continuous-authorization
+confirmation. They reuse the bounded DNS/HTTP/TLS collectors and the same target policy,
+but exclude RDAP and screenshot rendering. The local scheduler runs only while the
+application process is active and does not send messages or submit forms. Disabling the
+case setting prevents future scheduled jobs; existing immutable evidence is retained.
+
 Successful DNS response messages are preserved as `application/dns-message` originals below `10_snapshots/<snapshot-id>/dns/`. The normalized snapshot and its failure details are stored as an immutable event. DNS collection does not imply that the website was opened or that its content was reviewed.
 
 ### Current HTTP/TLS implementation

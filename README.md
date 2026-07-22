@@ -37,11 +37,13 @@ This foundation currently includes:
 - an explicit passive DNS/HTTP/TLS/RDAP job with validated-IP connections, redirect revalidation, bounded bodies, raw certificates, authoritative registration data and normalized observations;
 - a Docker-isolated offline desktop rendering of bounded HTML and separately collected CSS evidence, with JavaScript and all container networking disabled;
 - automatic normalized diffs between successive snapshots and criticality-based dates for the next operator-triggered technical review;
+- an operator-authorized local availability scheduler that performs bounded DNS/HTTP/TLS checks, displays the latest UP/DOWN signal, and survives application restarts;
+- process-derived next actions and exact due dates using the J+7, J+14/J+15, J+21 and J+30 escalation cadence;
 - a live, background-safe collection progress dialog with per-stage status and operator-friendly complete, limited, and failed outcomes;
 - a guided ICANN Lookup fallback for rate-limited RDAP queries, with operator-pasted results stored as immutable, timestamped and SHA-256-manifested evidence;
 - unit tests for the first safety-critical behaviors.
 
-Passive DNS/HTTP/TLS/RDAP collection and offline static rendering are implemented but remain disabled by default. Review dates are calculated and surfaced locally, but never trigger a network request automatically. Shared database persistence, notification scheduling, Microsoft Graph, and optional LLM integration remain feature-gated until implemented and reviewed.
+Passive DNS/HTTP/TLS/RDAP collection and offline static rendering are implemented but remain disabled by default. In network mode, an operator may separately authorize recurring DNS/HTTP/TLS availability checks for an individual case. The local scheduler runs only while the application is open, catches up overdue checks after restart, and never performs RDAP, screenshots, JavaScript, form submission, or messaging. Shared database persistence, external notifications, Microsoft Graph, and optional LLM integration remain feature-gated until implemented and reviewed.
 
 ## Quick start
 

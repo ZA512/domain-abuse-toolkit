@@ -16,6 +16,8 @@ from domain_abuse_toolkit.models import (
     CaseState,
     Criticality,
     ManualEvidenceEvent,
+    MonitoringEvent,
+    MonitoringUpdate,
     QualificationEvent,
     QualificationSubmission,
     SnapshotEvent,
@@ -67,6 +69,7 @@ class CaseService:
                 | QualificationEvent
                 | SubmissionEvent
                 | ManualEvidenceEvent
+                | MonitoringEvent
                 | SnapshotEvent
             ],
         ] = {}
@@ -99,6 +102,7 @@ class CaseService:
                 | QualificationEvent
                 | SubmissionEvent
                 | ManualEvidenceEvent
+                | MonitoringEvent
                 | SnapshotEvent
             ] = []
             try:
@@ -124,6 +128,7 @@ class CaseService:
                             | QualificationEvent
                             | SubmissionEvent
                             | ManualEvidenceEvent
+                            | MonitoringEvent
                             | SnapshotEvent
                         ) = ActionEvent.model_validate(raw_event)
                     elif raw_event.get("event_type") == "qualification_recorded":
@@ -132,6 +137,8 @@ class CaseService:
                         event = SubmissionEvent.model_validate(raw_event)
                     elif raw_event.get("event_type") == "manual_evidence_recorded":
                         event = ManualEvidenceEvent.model_validate(raw_event)
+                    elif raw_event.get("event_type") == "monitoring_configured":
+                        event = MonitoringEvent.model_validate(raw_event)
                     elif raw_event.get("event_type") == "snapshot_recorded":
                         event = SnapshotEvent.model_validate(raw_event)
                     else:
@@ -146,6 +153,8 @@ class CaseService:
                         self._apply_submission_event(record, event)
                     elif isinstance(event, ManualEvidenceEvent):
                         self._apply_manual_evidence_event(record, event)
+                    elif isinstance(event, MonitoringEvent):
+                        self._apply_monitoring_event(record, event)
                     else:
                         self._apply_snapshot_event(record, event)
                 except (
@@ -173,10 +182,10 @@ class CaseService:
             follow_up = 24
         elif intake.campaign:
             criticality = Criticality.CAMPAIGN
-            follow_up = 72
+            follow_up = 24
         elif intake.urgency == Urgency.HIGH:
             criticality = Criticality.HIGH
-            follow_up = 72
+            follow_up = 168
         else:
             criticality = Criticality.HIGH
             follow_up = 168
@@ -382,8 +391,8 @@ class CaseService:
             criticality = record.criticality_confirmed or record.criticality_proposed
             follow_up_hours = {
                 Criticality.CRITICAL: 24,
-                Criticality.HIGH: 72,
-                Criticality.CAMPAIGN: 72,
+                Criticality.HIGH: 168,
+                Criticality.CAMPAIGN: 24,
                 Criticality.LOW: 168,
             }[criticality]
             event = SubmissionEvent(
@@ -414,6 +423,55 @@ class CaseService:
                 source="operator-confirmed external submission",
             )
             self._apply_submission_event(record, event)
+            self._events.setdefault(case_id, []).append(event)
+            return record
+
+    @staticmethod
+    def _apply_monitoring_event(record: CaseRecord, event: MonitoringEvent) -> None:
+        record.monitoring_enabled = event.enabled
+        record.monitoring_interval_hours = event.interval_hours
+        record.monitoring_authorized_at = event.occurred_at if event.enabled else None
+        record.updated_at = max(record.updated_at, event.occurred_at)
+
+    def configure_monitoring(
+        self, case_id: str, update: MonitoringUpdate
+    ) -> CaseRecord:
+        if update.enabled and not update.confirmed_authorized:
+            raise ValueError(
+                "Confirm continuing authorization before enabling scheduled checks."
+            )
+        with self._lock:
+            try:
+                record = self._cases[case_id]
+            except KeyError as exc:
+                raise CaseNotFoundError(case_id) from exc
+            now = datetime.now(UTC)
+            event = MonitoringEvent(
+                id=f"EVT-{uuid.uuid4().hex.upper()}",
+                case_id=case_id,
+                enabled=update.enabled,
+                interval_hours=update.interval_hours,
+                occurred_at=now,
+            )
+            payload = {
+                "schema_version": "1.0",
+                "event": event.model_dump(mode="json"),
+                "notice": (
+                    "Immutable operator decision authorizing or disabling bounded "
+                    "scheduled DNS/HTTP/TLS checks."
+                ),
+            }
+            event_path = (
+                f"00_case/events/{now:%Y%m%dT%H%M%S.%fZ}-{event.id}.json"
+            )
+            self.evidence_store.write_original(
+                case_id,
+                event_path,
+                (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode(),
+                media_type="application/json",
+                source="operator monitoring configuration",
+            )
+            self._apply_monitoring_event(record, event)
             self._events.setdefault(case_id, []).append(event)
             return record
 
@@ -620,6 +678,7 @@ class CaseService:
         | QualificationEvent
         | SubmissionEvent
         | ManualEvidenceEvent
+        | MonitoringEvent
         | SnapshotEvent
     ]:
         if case_id not in self._cases:
