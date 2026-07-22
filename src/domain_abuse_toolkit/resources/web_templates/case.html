@@ -42,7 +42,7 @@
            href="{{ step.href }}"
            data-workflow-step="{{ step.id }}"
            {% if step.current %}aria-current="step"{% endif %}>
-          <span class="workflow-marker" aria-hidden="true">{{ "✓" if step.state == "complete" else loop.index }}</span>
+          <span class="workflow-marker" aria-hidden="true">{{ "✓" if step.state in ["complete", "limited"] else loop.index }}</span>
           <span class="workflow-step-copy">
             <strong>{{ step.label }}</strong>
             <small>{{ step.state_label }}</small>
@@ -98,35 +98,34 @@
           </div>
         {% endif %}
 
-        {% if latest_collection_job %}
+        {% if latest_collection_job and latest_collection_job.status in ['queued', 'running'] %}
           <p class="job-status"><strong>{{ t("case.evidence.last_job", status=t("collector_status." ~ latest_collection_job.status.value)) }}</strong><small>{{ latest_collection_job.id }}</small></p>
         {% endif %}
 
         {% if latest_assessment %}
-          <section class="collection-outcome collection-outcome-{{ latest_assessment.outcome }}">
-            <div>
-              <strong>{{ t("case.evidence.result." ~ latest_assessment.outcome ~ ".title") }}</strong>
-              <p>{{ t("case.evidence.result." ~ latest_assessment.outcome ~ ".detail") }}</p>
+          <section class="evidence-health" aria-label="{{ t('case.evidence.health.label') }}">
+            <div class="evidence-health-heading">
+              <strong>{{ t("case.evidence.health.title") }}</strong>
+              <span class="badge workflow-badge-{{ 'complete' if latest_assessment.outcome == 'complete' else ('limited' if latest_assessment.outcome == 'usable_with_limits' else 'attention') }}">{{ t("case.evidence.health." ~ latest_assessment.outcome) }}</span>
             </div>
-            {% if latest_assessment.limitations %}
-              <details>
-                <summary>{{ t("case.evidence.limitations") }} ({{ latest_assessment.limitations|length }})</summary>
-                <ul class="limitation-list">
-                  {% for limitation in latest_assessment.limitations %}
-                    <li><strong>{{ limitation.collector|upper }}</strong><span>{{ t("collection.error." ~ limitation.error.code, default=limitation.error.message) }}</span></li>
-                  {% endfor %}
-                </ul>
-              </details>
-            {% endif %}
-            {% if latest_assessment.can_retry %}<small>{{ t("case.evidence.retry_hint") }}</small>{% endif %}
+            <ul class="evidence-source-list">
+              {% for source in latest_assessment.sources %}
+                <li class="evidence-source evidence-source-{{ source.state }}">
+                  <span class="evidence-source-marker" aria-hidden="true">{{ "✓" if source.state in ["complete", "manual"] else ("!" if source.state == "limited" else ("×" if source.state == "failed" else "—")) }}</span>
+                  <span><strong>{{ t("case.evidence.source." ~ source.collector) }}</strong><small>{{ t("case.evidence.source_state." ~ source.state) }}</small></span>
+                </li>
+              {% endfor %}
+            </ul>
           </section>
         {% endif %}
 
         {% if rdap_manual_needed or manual_rdap_evidence %}
-          <details id="manual-rdap" class="manual-evidence" {% if manual_evidence_error or (rdap_manual_needed and not manual_rdap_evidence) %}open{% endif %}>
+          <details id="manual-rdap" class="manual-evidence{% if manual_rdap_evidence %} manual-evidence-resolved{% endif %}" {% if manual_evidence_error %}open{% endif %}>
             <summary>
-              <span><strong>{{ t("case.evidence.manual_rdap.title") }}</strong><small>{{ t("case.evidence.manual_rdap.summary") }}</small></span>
+              <span class="manual-evidence-summary-marker" aria-hidden="true">{{ "✓" if manual_rdap_evidence else "!" }}</span>
+              <span><strong>{{ t("case.evidence.manual_rdap.completed_title") if manual_rdap_evidence else t("case.evidence.manual_rdap.problem_title") }}</strong><small>{{ t("case.evidence.manual_rdap.completed_summary") if manual_rdap_evidence else t("case.evidence.manual_rdap.problem_summary") }}</small></span>
               {% if manual_rdap_evidence %}<span class="badge badge-safe">{{ t("case.evidence.manual_rdap.saved_count", count=manual_rdap_evidence|length) }}</span>{% endif %}
+              {% if not manual_rdap_evidence %}<span class="manual-evidence-expand">{{ t("case.evidence.manual_rdap.expand") }}</span>{% endif %}
             </summary>
             <div class="manual-evidence-body">
               {% if rdap_manual_needed %}

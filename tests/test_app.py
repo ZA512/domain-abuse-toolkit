@@ -204,6 +204,43 @@ def test_rdap_limitation_offers_manual_evidence_capture(client: TestClient) -> N
             occurred_at=now,
             results=[
                 CollectorResult(
+                    collector="dns",
+                    version="test",
+                    status=CollectorStatus.COMPLETE,
+                    started_at=now,
+                    finished_at=now,
+                    observations=[
+                        {"category": "dns", "name": "A", "value": "192.0.2.1"}
+                    ],
+                ),
+                CollectorResult(
+                    collector="http",
+                    version="test",
+                    status=CollectorStatus.PARTIAL,
+                    started_at=now,
+                    finished_at=now,
+                    observations=[
+                        {"category": "http", "name": "status", "value": "200"}
+                    ],
+                    errors=[
+                        {
+                            "code": "http_body_truncated",
+                            "message": "bounded",
+                            "retryable": False,
+                        }
+                    ],
+                ),
+                CollectorResult(
+                    collector="tls",
+                    version="test",
+                    status=CollectorStatus.COMPLETE,
+                    started_at=now,
+                    finished_at=now,
+                    observations=[
+                        {"category": "tls", "name": "protocol", "value": "TLSv1.3"}
+                    ],
+                ),
+                CollectorResult(
                     collector="rdap",
                     version="test",
                     status=CollectorStatus.FAILED,
@@ -216,7 +253,17 @@ def test_rdap_limitation_offers_manual_evidence_capture(client: TestClient) -> N
                             "retryable": True,
                         }
                     ],
-                )
+                ),
+                CollectorResult(
+                    collector="screenshot",
+                    version="test",
+                    status=CollectorStatus.COMPLETE,
+                    started_at=now,
+                    finished_at=now,
+                    observations=[
+                        {"category": "capture", "name": "mode", "value": "offline"}
+                    ],
+                ),
             ],
         ),
         [],
@@ -224,7 +271,19 @@ def test_rdap_limitation_offers_manual_evidence_capture(client: TestClient) -> N
     case_path = f"/cases/{created['id']}"
 
     page = client.get(case_path)
-    assert "Complete RDAP manually" in page.text
+    assert "RDAP unavailable in the latest collection" in page.text
+    assert "Expand this card for the manual procedure" in page.text
+    assert 'class="manual-evidence"' in page.text
+    assert 'class="manual-evidence" open' not in page.text
+    assert "Latest collection" in page.text
+    assert "Technical evidence recorded." in page.text
+    assert "evidence-source evidence-source-complete" in page.text
+    assert "evidence-source evidence-source-limited" in page.text
+    assert "evidence-source evidence-source-failed" in page.text
+    assert re.search(
+        r'data-workflow-step="evidence"[\s\S]*?class="workflow-marker"[^>]*>✓</span>',
+        page.text,
+    )
     assert "https://lookup.icann.org/en/lookup?name=example.net" in page.text
     assert "raw RDAP response is available at the bottom" in page.text
 
@@ -244,6 +303,8 @@ def test_rdap_limitation_offers_manual_evidence_capture(client: TestClient) -> N
     updated = client.get(case_path)
     assert "Manual evidence recorded" in updated.text
     assert "Added by MG" in updated.text
+    assert "RDAP completed manually" in updated.text
+    assert "evidence-source evidence-source-manual" in updated.text
     event = main_module.case_service.get(created["id"]).manual_evidence[0]
     assert main_module.case_service.evidence_store.read_verified_original(
         created["id"], event.artifact_path
@@ -258,6 +319,7 @@ def test_collection_dialog_does_not_confuse_collector_error_with_save_failure(
     assert 'completed_stages.includes("persisting") ? "complete" : "failed"' in script.text
     assert 'payload.job.error ? "failed" : "complete"' not in script.text
     assert '"manual-rdap": "evidence"' in script.text
+    assert "window.location.replace(finishLink.href)" in script.text
 
 
 def test_verified_capture_is_displayed_inline_and_tampering_is_rejected(

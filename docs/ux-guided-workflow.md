@@ -42,6 +42,8 @@ The case page now uses the five-step rail, a single derived next-best action, on
 
 When RDAP is unavailable or rate-limited, Evidence expands a manual fallback in the same step: open the official lookup with the domain, copy the useful result, identify the operator, and attach it to the integrity-checked case. A collector limitation never makes the separate evidence-persistence stage appear failed when the snapshot was actually saved.
 
+After a run, the Evidence workspace presents one compact source-health row for DNS, HTTP, TLS, RDAP and Capture. Successful sources are green, bounded results are amber, missing results are red, and manually completed results are identified explicitly. Only a source requiring action receives a dedicated fallback card; that card is collapsed by default with a plain-language instruction to expand it. The detailed snapshot and change history remain below this summary. Once any snapshot is safely retained, the Evidence step marker becomes a check even when an optional source has a limitation.
+
 ## Acceptance criteria for the UX pass
 
 - A first-time operator can identify the next required action in under five seconds.

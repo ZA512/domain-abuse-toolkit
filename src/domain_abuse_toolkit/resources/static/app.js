@@ -107,6 +107,11 @@ if (collectionDialog) {
   };
 
   closeButton?.addEventListener("click", () => collectionDialog.close());
+  finishLink?.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (collectionDialog.open) collectionDialog.close();
+    window.location.replace(finishLink.href);
+  });
   if (collectionDialog.dataset.autoOpen === "true" && collectionDialog.showModal) {
     collectionDialog.showModal();
   }

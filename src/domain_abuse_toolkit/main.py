@@ -221,12 +221,41 @@ def _safe_return_path(value: str) -> str:
     return path
 
 
-def _snapshot_assessment(snapshot: SnapshotEvent | None) -> dict[str, object] | None:
+def _snapshot_assessment(
+    snapshot: SnapshotEvent | None,
+    *,
+    manual_rdap_available: bool = False,
+) -> dict[str, object] | None:
     if snapshot is None:
         return None
+    results = {result.collector: result for result in snapshot.results}
+    sources = []
+    for collector in ("dns", "http", "tls", "rdap", "screenshot"):
+        result = results.get(collector)
+        if result is None:
+            continue
+        if collector == "rdap" and manual_rdap_available:
+            state = "manual"
+        else:
+            state = {
+                CollectorStatus.COMPLETE: "complete",
+                CollectorStatus.PARTIAL: "limited",
+                CollectorStatus.FAILED: "failed",
+                CollectorStatus.SKIPPED: "unavailable",
+                CollectorStatus.QUEUED: "unavailable",
+                CollectorStatus.RUNNING: "unavailable",
+            }[result.status]
+        sources.append(
+            {
+                "collector": collector,
+                "state": state,
+                "errors": result.errors,
+            }
+        )
     return {
         "outcome": snapshot_outcome(snapshot),
         "can_retry": snapshot_can_retry(snapshot),
+        "sources": sources,
         "limitations": [
             {"collector": result.collector, "error": error}
             for result in snapshot.results
@@ -341,7 +370,10 @@ def _case_context(
         "latest_submission": record.submissions[-1] if record.submissions else None,
         "latest_collection_job": latest_collection_job,
         "latest_snapshot": latest_snapshot,
-        "latest_assessment": _snapshot_assessment(latest_snapshot),
+        "latest_assessment": _snapshot_assessment(
+            latest_snapshot,
+            manual_rdap_available=bool(record.manual_evidence),
+        ),
         "rdap_manual_needed": rdap_manual_needed,
         "rdap_lookup_url": rdap_lookup_url,
         "manual_rdap_evidence": list(reversed(record.manual_evidence)),
