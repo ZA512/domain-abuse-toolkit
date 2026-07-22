@@ -333,16 +333,12 @@ class CollectionJobService:
         try:
             self.case_service.record_snapshot(snapshot, artifacts)
         except Exception:
-            completed_stages = list(self.get(job_id).completed_stages)
-            if "persisting" not in completed_stages:
-                completed_stages.append("persisting")
             self._update(
                 job_id,
                 status=CollectorStatus.FAILED,
                 finished_at=datetime.now(UTC),
                 error="The collection result could not be persisted.",
                 current_stage="done",
-                completed_stages=completed_stages,
             )
             return
         self._update(

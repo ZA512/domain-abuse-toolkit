@@ -183,6 +183,83 @@ def test_passive_collection_opens_live_progress_dialog(client: TestClient) -> No
     assert not status.json()["terminal"]
 
 
+def test_rdap_limitation_offers_manual_evidence_capture(client: TestClient) -> None:
+    created = client.post(
+        "/api/v1/cases",
+        json={
+            "target": "https://login.example.net/",
+            "brand": "Example Brand",
+            "legit_url": "https://www.example.com/",
+        },
+    ).json()
+    main_module = importlib.import_module("domain_abuse_toolkit.main")
+    now = datetime.now(UTC)
+    main_module.case_service.record_snapshot(
+        SnapshotEvent(
+            id="SNP-RDAP-LIMITED",
+            case_id=created["id"],
+            status=CollectorStatus.PARTIAL,
+            started_at=now,
+            finished_at=now,
+            occurred_at=now,
+            results=[
+                CollectorResult(
+                    collector="rdap",
+                    version="test",
+                    status=CollectorStatus.FAILED,
+                    started_at=now,
+                    finished_at=now,
+                    errors=[
+                        {
+                            "code": "rdap_http_status",
+                            "message": "HTTP 429",
+                            "retryable": True,
+                        }
+                    ],
+                )
+            ],
+        ),
+        [],
+    )
+    case_path = f"/cases/{created['id']}"
+
+    page = client.get(case_path)
+    assert "Complete RDAP manually" in page.text
+    assert "https://lookup.icann.org/en/lookup?name=example.net" in page.text
+    assert "raw RDAP response is available at the bottom" in page.text
+
+    saved = client.post(
+        f"{case_path}/evidence/manual-rdap",
+        data={
+            "_csrf_token": _csrf_token(client, case_path),
+            "content": "Registrar: Example Registrar\nAbuse: abuse@example.test",
+            "operator": "MG",
+            "notes": "Copied manually",
+        },
+        follow_redirects=False,
+    )
+    assert saved.status_code == 303
+    assert saved.headers["location"] == f"{case_path}#manual-rdap"
+
+    updated = client.get(case_path)
+    assert "Manual evidence recorded" in updated.text
+    assert "Added by MG" in updated.text
+    event = main_module.case_service.get(created["id"]).manual_evidence[0]
+    assert main_module.case_service.evidence_store.read_verified_original(
+        created["id"], event.artifact_path
+    ).startswith(b"Registrar: Example Registrar")
+
+
+def test_collection_dialog_does_not_confuse_collector_error_with_save_failure(
+    client: TestClient,
+) -> None:
+    script = client.get("/static/app.js")
+    assert script.status_code == 200
+    assert 'completed_stages.includes("persisting") ? "complete" : "failed"' in script.text
+    assert 'payload.job.error ? "failed" : "complete"' not in script.text
+    assert '"manual-rdap": "evidence"' in script.text
+
+
 def test_verified_capture_is_displayed_inline_and_tampering_is_rejected(
     client: TestClient,
 ) -> None:

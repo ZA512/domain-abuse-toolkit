@@ -122,6 +122,51 @@
           </section>
         {% endif %}
 
+        {% if rdap_manual_needed or manual_rdap_evidence %}
+          <details id="manual-rdap" class="manual-evidence" {% if manual_evidence_error or (rdap_manual_needed and not manual_rdap_evidence) %}open{% endif %}>
+            <summary>
+              <span><strong>{{ t("case.evidence.manual_rdap.title") }}</strong><small>{{ t("case.evidence.manual_rdap.summary") }}</small></span>
+              {% if manual_rdap_evidence %}<span class="badge badge-safe">{{ t("case.evidence.manual_rdap.saved_count", count=manual_rdap_evidence|length) }}</span>{% endif %}
+            </summary>
+            <div class="manual-evidence-body">
+              {% if rdap_manual_needed %}
+                <div class="manual-procedure">
+                  <p>{{ t("case.evidence.manual_rdap.reason") }}</p>
+                  <ol>
+                    <li>{{ t("case.evidence.manual_rdap.step1", domain=case.target.registrable_domain) }}</li>
+                    <li>{{ t("case.evidence.manual_rdap.step2") }}</li>
+                    <li>{{ t("case.evidence.manual_rdap.step3") }}</li>
+                  </ol>
+                  <a class="button" href="{{ rdap_lookup_url }}" target="_blank" rel="noopener noreferrer">{{ t("case.evidence.manual_rdap.open") }}</a>
+                </div>
+              {% endif %}
+
+              {% if manual_evidence_error %}<div class="alert" role="alert">{{ manual_evidence_error }}</div>{% endif %}
+              <form action="/cases/{{ case.id }}/evidence/manual-rdap" method="post" class="manual-evidence-form">
+                <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
+                <label>{{ t("case.evidence.manual_rdap.content") }}<textarea name="content" rows="8" maxlength="524288" required placeholder="{{ t('case.evidence.manual_rdap.content_help') }}"></textarea></label>
+                <div class="form-row">
+                  <label>{{ t("case.evidence.manual_rdap.operator") }}<input name="operator" maxlength="80" required placeholder="{{ t('case.evidence.manual_rdap.operator_help') }}"></label>
+                  <label>{{ t("case.evidence.manual_rdap.notes") }}<input name="notes" maxlength="1000" placeholder="{{ t('case.evidence.manual_rdap.notes_help') }}"></label>
+                </div>
+                <p class="manual-evidence-notice">{{ t("case.evidence.manual_rdap.notice") }}</p>
+                <button class="button button-primary" type="submit">{{ t("case.evidence.manual_rdap.save") }}</button>
+              </form>
+
+              {% if manual_rdap_evidence %}
+                <div class="manual-evidence-list">
+                  {% for evidence in manual_rdap_evidence %}
+                    <article>
+                      <span class="badge badge-safe">{{ t("case.evidence.manual_rdap.saved") }}</span>
+                      <div><strong>{{ evidence.occurred_at.strftime('%Y-%m-%d %H:%M UTC') }}</strong><small>{{ t("case.evidence.manual_rdap.by", operator=evidence.operator) }} · {{ evidence.artifact_path }}</small>{% if evidence.notes %}<p>{{ evidence.notes }}</p>{% endif %}</div>
+                    </article>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </div>
+          </details>
+        {% endif %}
+
         {% if snapshots %}
           <div class="snapshot-stack compact-snapshots">
             {% for snapshot in snapshots %}
@@ -341,6 +386,7 @@
                 {% if item.kind == "action" %}<strong>{{ t("case.details.completed") if item.event.completed else t("case.details.reopened") }} · {{ item.action_title }}</strong>
                 {% elif item.kind == "qualification" %}<strong>{{ t("case.details.qualification", level=item.event.confirmed_criticality|upper) }}</strong><span class="timeline-detail">{{ t("case.details.reviewed", reviewer=item.event.reviewer) }}</span>
                 {% elif item.kind == "submission" %}<strong>{{ t("case.details.report", channel=item.event.channel_name) }}</strong><span class="timeline-detail">{{ t("case.details.reminder", date=item.event.follow_up_due_at.strftime('%Y-%m-%d %H:%M UTC')) }}</span>
+                {% elif item.kind == "manual_evidence" %}<strong>{{ t("case.details.manual_evidence") }}</strong><span class="timeline-detail">{{ t("case.evidence.manual_rdap.by", operator=item.event.operator) }}</span>
                 {% else %}<strong>{{ t("case.details.snapshot", status=item.event.status|upper) }}</strong>{% endif %}
                 <small>{{ item.event.occurred_at.strftime('%d/%m/%Y %H:%M:%S') }} UTC · {{ item.event.id }}</small>
               </div></li>

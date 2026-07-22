@@ -15,6 +15,7 @@ from domain_abuse_toolkit.models import (
     CaseRecord,
     CaseState,
     Criticality,
+    ManualEvidenceEvent,
     QualificationEvent,
     QualificationSubmission,
     SnapshotEvent,
@@ -48,6 +49,10 @@ class SubmissionValidationError(ValueError):
     pass
 
 
+class ManualEvidenceValidationError(ValueError):
+    pass
+
+
 class CaseService:
     """Local case service backed by integrity-checked records in the evidence store."""
 
@@ -56,7 +61,14 @@ class CaseService:
         self.drafts = drafts
         self._cases: dict[str, CaseRecord] = {}
         self._events: dict[
-            str, list[ActionEvent | QualificationEvent | SubmissionEvent | SnapshotEvent]
+            str,
+            list[
+                ActionEvent
+                | QualificationEvent
+                | SubmissionEvent
+                | ManualEvidenceEvent
+                | SnapshotEvent
+            ],
         ] = {}
         self._lock = threading.Lock()
         self.load_warnings: list[str] = []
@@ -83,7 +95,11 @@ class CaseService:
                 self.load_warnings.append(f"{case_id}: {exc}")
                 continue
             events: list[
-                ActionEvent | QualificationEvent | SubmissionEvent | SnapshotEvent
+                ActionEvent
+                | QualificationEvent
+                | SubmissionEvent
+                | ManualEvidenceEvent
+                | SnapshotEvent
             ] = []
             try:
                 event_paths = self.evidence_store.list_original_paths(
@@ -107,12 +123,15 @@ class CaseService:
                             ActionEvent
                             | QualificationEvent
                             | SubmissionEvent
+                            | ManualEvidenceEvent
                             | SnapshotEvent
                         ) = ActionEvent.model_validate(raw_event)
                     elif raw_event.get("event_type") == "qualification_recorded":
                         event = QualificationEvent.model_validate(raw_event)
                     elif raw_event.get("event_type") == "report_submission_recorded":
                         event = SubmissionEvent.model_validate(raw_event)
+                    elif raw_event.get("event_type") == "manual_evidence_recorded":
+                        event = ManualEvidenceEvent.model_validate(raw_event)
                     elif raw_event.get("event_type") == "snapshot_recorded":
                         event = SnapshotEvent.model_validate(raw_event)
                     else:
@@ -125,6 +144,8 @@ class CaseService:
                         self._apply_qualification_event(record, event)
                     elif isinstance(event, SubmissionEvent):
                         self._apply_submission_event(record, event)
+                    elif isinstance(event, ManualEvidenceEvent):
+                        self._apply_manual_evidence_event(record, event)
                     else:
                         self._apply_snapshot_event(record, event)
                 except (
@@ -397,6 +418,94 @@ class CaseService:
             return record
 
     @staticmethod
+    def _apply_manual_evidence_event(
+        record: CaseRecord, event: ManualEvidenceEvent
+    ) -> None:
+        if not any(existing.id == event.id for existing in record.manual_evidence):
+            record.manual_evidence.append(event)
+        record.updated_at = max(record.updated_at, event.occurred_at)
+
+    def record_manual_rdap_evidence(
+        self,
+        case_id: str,
+        *,
+        content: str,
+        operator: str,
+        source_url: str,
+        notes: str | None = None,
+    ) -> ManualEvidenceEvent:
+        normalized_content = content.strip()
+        normalized_operator = operator.strip()
+        normalized_notes = notes.strip() if notes else None
+        if not normalized_content:
+            raise ManualEvidenceValidationError("Manual evidence must not be empty.")
+        if len(normalized_content.encode("utf-8")) > 512 * 1024:
+            raise ManualEvidenceValidationError(
+                "Manual evidence exceeds the 512 KiB safety limit."
+            )
+        if not normalized_operator:
+            raise ManualEvidenceValidationError("Operator initials are required.")
+        if any(ord(character) < 32 or ord(character) == 127 for character in normalized_operator):
+            raise ManualEvidenceValidationError(
+                "Operator initials must not contain control characters."
+            )
+        if len(normalized_operator) > 80:
+            raise ManualEvidenceValidationError("Operator initials are too long.")
+        if normalized_notes and len(normalized_notes) > 1000:
+            raise ManualEvidenceValidationError("Manual evidence notes are too long.")
+        if not source_url.startswith("https://lookup.icann.org/"):
+            raise ManualEvidenceValidationError(
+                "The manual RDAP source must be the official ICANN Lookup service."
+            )
+
+        with self._lock:
+            try:
+                record = self._cases[case_id]
+            except KeyError as exc:
+                raise CaseNotFoundError(case_id) from exc
+            now = datetime.now(UTC)
+            event_id = f"EVT-{uuid.uuid4().hex.upper()}"
+            artifact_path = f"20_manual/{event_id}/rdap.txt"
+            event = ManualEvidenceEvent(
+                id=event_id,
+                case_id=case_id,
+                source_url=source_url,
+                artifact_path=artifact_path,
+                operator=normalized_operator,
+                notes=normalized_notes,
+                occurred_at=now,
+            )
+            self.evidence_store.write_original(
+                case_id,
+                artifact_path,
+                (normalized_content + "\n").encode("utf-8"),
+                media_type="text/plain; charset=utf-8",
+                source="operator-copied ICANN Lookup result",
+                metadata={
+                    "evidence_type": "rdap",
+                    "source_url": source_url,
+                    "operator": normalized_operator,
+                    "captured_at": now.isoformat(),
+                },
+            )
+            payload = {
+                "schema_version": "1.0",
+                "event": event.model_dump(mode="json"),
+                "notice": "Immutable operator-supplied evidence event.",
+            }
+            event_path = f"00_case/events/{now:%Y%m%dT%H%M%S.%fZ}-{event.id}.json"
+            self.evidence_store.write_original(
+                case_id,
+                event_path,
+                (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode(),
+                media_type="application/json",
+                source="operator-supplied evidence record",
+            )
+            self._apply_manual_evidence_event(record, event)
+            self._events.setdefault(case_id, []).append(event)
+            return event
+
+    @staticmethod
     def _apply_snapshot_event(record: CaseRecord, event: SnapshotEvent) -> None:
         if not any(existing.id == event.id for existing in record.snapshots):
             record.snapshots.append(event)
@@ -506,7 +615,13 @@ class CaseService:
 
     def history(
         self, case_id: str
-    ) -> list[ActionEvent | QualificationEvent | SubmissionEvent | SnapshotEvent]:
+    ) -> list[
+        ActionEvent
+        | QualificationEvent
+        | SubmissionEvent
+        | ManualEvidenceEvent
+        | SnapshotEvent
+    ]:
         if case_id not in self._cases:
             raise CaseNotFoundError(case_id)
         return list(reversed(self._events.get(case_id, [])))

@@ -22,6 +22,7 @@ from domain_abuse_toolkit.models import (
     CollectorStatus,
     Criticality,
     Draft,
+    ManualEvidenceEvent,
     QualificationEvent,
     QualificationSubmission,
     SnapshotEvent,
@@ -33,6 +34,7 @@ from domain_abuse_toolkit.services.cases import (
     ActionNotFoundError,
     CaseNotFoundError,
     CaseService,
+    ManualEvidenceValidationError,
     QualificationValidationError,
     SubmissionValidationError,
 )
@@ -239,6 +241,7 @@ def _case_context(
     qualification_error: str | None = None,
     submission_error: str | None = None,
     collection_error: str | None = None,
+    manual_evidence_error: str | None = None,
 ) -> dict[str, object]:
     selected_translator = _request_translator(request)
     try:
@@ -272,6 +275,8 @@ def _case_context(
             history.append({"kind": "qualification", "event": event})
         elif isinstance(event, SnapshotEvent):
             history.append({"kind": "snapshot", "event": event})
+        elif isinstance(event, ManualEvidenceEvent):
+            history.append({"kind": "manual_evidence", "event": event})
         else:
             history.append({"kind": "submission", "event": event})
     integrity_errors = case_service.evidence_store.verify_case(case_id)
@@ -282,6 +287,22 @@ def _case_context(
         if str(exc) not in integrity_errors:
             integrity_errors.append(str(exc))
     latest_snapshot = record.snapshots[-1] if record.snapshots else None
+    latest_rdap_result = next(
+        (
+            result
+            for result in reversed(latest_snapshot.results)
+            if result.collector == "rdap"
+        ),
+        None,
+    ) if latest_snapshot else None
+    rdap_manual_needed = bool(
+        latest_rdap_result
+        and latest_rdap_result.status != CollectorStatus.COMPLETE
+    )
+    rdap_lookup_url = (
+        "https://lookup.icann.org/en/lookup?name="
+        f"{quote(record.target.registrable_domain, safe='')}"
+    )
     technical_review = None
     if latest_snapshot and latest_snapshot.next_check_due_at:
         technical_review = {
@@ -308,6 +329,7 @@ def _case_context(
         "qualification_error": qualification_error,
         "submission_error": submission_error,
         "collection_error": collection_error,
+        "manual_evidence_error": manual_evidence_error,
         "form_csrf_token": form_csrf_token,
         "integrity_errors": integrity_errors,
         "artifact_count": artifact_count,
@@ -320,6 +342,9 @@ def _case_context(
         "latest_collection_job": latest_collection_job,
         "latest_snapshot": latest_snapshot,
         "latest_assessment": _snapshot_assessment(latest_snapshot),
+        "rdap_manual_needed": rdap_manual_needed,
+        "rdap_lookup_url": rdap_lookup_url,
+        "manual_rdap_evidence": list(reversed(record.manual_evidence)),
         "collection_modal_open": bool(
             latest_collection_job
             and request.query_params.get("collection_job")
@@ -463,6 +488,7 @@ def case_detail(
     qualification_error: str | None = None,
     submission_error: str | None = None,
     collection_error: str | None = None,
+    manual_evidence_error: str | None = None,
 ):  # type: ignore[no-untyped-def]
     return templates.TemplateResponse(
         request=request,
@@ -473,8 +499,45 @@ def case_detail(
             qualification_error,
             submission_error,
             collection_error,
+            manual_evidence_error,
         ),
     )
+
+
+@app.post("/cases/{case_id}/evidence/manual-rdap")
+def record_manual_rdap_evidence_form(
+    case_id: str,
+    content: Annotated[str, Form(min_length=1, max_length=524288)],
+    operator: Annotated[str, Form(min_length=1, max_length=80)],
+    notes: Annotated[str | None, Form(max_length=1000)] = None,
+    csrf_token: Annotated[str, Form(alias="_csrf_token")] = "",
+) -> RedirectResponse:
+    _verify_form_csrf(csrf_token)
+    try:
+        record = case_service.get(case_id)
+        source_url = (
+            "https://lookup.icann.org/en/lookup?name="
+            f"{quote(record.target.registrable_domain, safe='')}"
+        )
+        case_service.record_manual_rdap_evidence(
+            case_id,
+            content=content,
+            operator=operator,
+            source_url=source_url,
+            notes=notes,
+        )
+    except CaseNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Case not found") from exc
+    except ManualEvidenceValidationError as exc:
+        encoded_error = quote(str(exc), safe="")
+        return RedirectResponse(
+            url=(
+                f"/cases/{case_id}?manual_evidence_error={encoded_error}"
+                "#manual-rdap"
+            ),
+            status_code=303,
+        )
+    return RedirectResponse(url=f"/cases/{case_id}#manual-rdap", status_code=303)
 
 
 @app.get("/cases/{case_id}/snapshots/{snapshot_id}/capture.png")

@@ -40,6 +40,8 @@ A disabled optional capability is explained inside its step and does not block t
 
 The case page now uses the five-step rail, a single derived next-best action, one expanded workspace, compact completed-state summaries, a permanent evidence-export action, and a secondary journal. A new case opens on Evidence before Qualification. Collection launches open a live progress dialog, may continue in the background, and end with an explicit complete, usable-with-limits, or action-required outcome.
 
+When RDAP is unavailable or rate-limited, Evidence expands a manual fallback in the same step: open the official lookup with the domain, copy the useful result, identify the operator, and attach it to the integrity-checked case. A collector limitation never makes the separate evidence-persistence stage appear failed when the snapshot was actually saved.
+
 ## Acceptance criteria for the UX pass
 
 - A first-time operator can identify the next required action in under five seconds.

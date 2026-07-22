@@ -195,6 +195,18 @@ class SubmissionEvent(BaseModel):
     follow_up_due_at: datetime
 
 
+class ManualEvidenceEvent(BaseModel):
+    id: str
+    case_id: str
+    event_type: Literal["manual_evidence_recorded"] = "manual_evidence_recorded"
+    evidence_type: Literal["rdap"] = "rdap"
+    source_url: str = Field(max_length=4096)
+    artifact_path: str
+    operator: str = Field(min_length=1, max_length=80)
+    notes: str | None = Field(default=None, max_length=1000)
+    occurred_at: datetime
+
+
 class CollectorError(BaseModel):
     code: str
     message: str
@@ -269,6 +281,7 @@ class CaseRecord(BaseModel):
     criticality_confirmed: Criticality | None = None
     qualification: QualificationEvent | None = None
     submissions: list[SubmissionEvent] = Field(default_factory=list)
+    manual_evidence: list[ManualEvidenceEvent] = Field(default_factory=list)
     snapshots: list[SnapshotEvent] = Field(default_factory=list)
     actions: list[SuggestedAction]
     drafts: list[Draft]

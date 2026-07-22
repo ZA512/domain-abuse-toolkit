@@ -13,6 +13,7 @@ from domain_abuse_toolkit.models import (
 )
 from domain_abuse_toolkit.services.cases import (
     CaseService,
+    ManualEvidenceValidationError,
     QualificationValidationError,
     SubmissionValidationError,
 )
@@ -64,6 +65,58 @@ def test_cases_are_restored_from_verified_local_records(tmp_path) -> None:  # ty
     assert restarted_service.get(created.id) == created
     assert [case.id for case in restarted_service.list()] == [created.id]
     assert restarted_service.load_warnings == []
+
+
+def test_manual_rdap_evidence_is_integrity_checked_and_survives_restart(
+    tmp_path,
+) -> None:  # type: ignore[no-untyped-def]
+    service = CaseService(EvidenceStore(tmp_path), DraftService())
+    case = service.create(
+        CaseCreate(
+            target="https://login.example.net/account",
+            brand="Example Brand",
+            legit_url="https://www.example.com/",
+        )
+    )
+
+    event = service.record_manual_rdap_evidence(
+        case.id,
+        content="Registrar: Example Registrar\nAbuse email: abuse@example.test",
+        operator="MG",
+        source_url="https://lookup.icann.org/en/lookup?name=example.net",
+        notes="Copied from the raw RDAP response.",
+    )
+
+    assert event in case.manual_evidence
+    assert service.evidence_store.read_verified_original(
+        case.id, event.artifact_path
+    ).startswith(b"Registrar: Example Registrar")
+    assert service.evidence_store.verify_case(case.id) == []
+
+    restarted = CaseService(EvidenceStore(tmp_path), DraftService())
+    restored = restarted.get(case.id)
+    assert restored.manual_evidence == [event]
+    assert restarted.history(case.id)[0] == event
+    assert restarted.evidence_store.verify_case(case.id) == []
+
+
+def test_manual_rdap_evidence_rejects_unofficial_source(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    service = CaseService(EvidenceStore(tmp_path), DraftService())
+    case = service.create(
+        CaseCreate(
+            target="https://example.net/",
+            brand="Example Brand",
+            legit_url="https://www.example.com/",
+        )
+    )
+
+    with pytest.raises(ManualEvidenceValidationError, match="official ICANN"):
+        service.record_manual_rdap_evidence(
+            case.id,
+            content="synthetic evidence",
+            operator="MG",
+            source_url="https://attacker.example/lookup",
+        )
 
 
 def test_action_events_drive_state_and_survive_restart(tmp_path) -> None:  # type: ignore[no-untyped-def]

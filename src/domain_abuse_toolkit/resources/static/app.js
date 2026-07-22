@@ -47,7 +47,10 @@ if (collectionDialog) {
     stageElements.forEach((element) => {
       const stage = element.dataset.collectionStage;
       if (stage === "persisting") {
-        setStageState(element, payload.job.error ? "failed" : "complete");
+        setStageState(
+          element,
+          payload.job.completed_stages.includes("persisting") ? "complete" : "failed",
+        );
       } else if (stage === "http_tls") {
         setStageState(element, resultState([byCollector.get("http"), byCollector.get("tls")].filter(Boolean)));
       } else {
@@ -154,6 +157,7 @@ const workflowRoot = document.querySelector("[data-workflow-root]");
 if (workflowRoot) {
   const aliases = {
     collection: "evidence",
+    "manual-rdap": "evidence",
     "record-submission": "reporting",
   };
   const panels = [...workflowRoot.querySelectorAll("[data-workflow-panel]")];
@@ -189,6 +193,13 @@ if (workflowRoot) {
     }
     if (!showWorkflowStep(requested, focusPanel)) {
       showWorkflowStep(workflowRoot.dataset.defaultStep || "overview", false);
+    }
+    if (hashStep === "manual-rdap") {
+      const manualRdap = document.getElementById("manual-rdap");
+      if (manualRdap) {
+        manualRdap.open = true;
+        if (focusPanel) manualRdap.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
     }
   };
 

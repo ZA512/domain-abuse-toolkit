@@ -38,6 +38,7 @@ This foundation currently includes:
 - a Docker-isolated offline desktop rendering of bounded HTML and separately collected CSS evidence, with JavaScript and all container networking disabled;
 - automatic normalized diffs between successive snapshots and criticality-based dates for the next operator-triggered technical review;
 - a live, background-safe collection progress dialog with per-stage status and operator-friendly complete, limited, and failed outcomes;
+- a guided ICANN Lookup fallback for rate-limited RDAP queries, with operator-pasted results stored as immutable, timestamped and SHA-256-manifested evidence;
 - unit tests for the first safety-critical behaviors.
 
 Passive DNS/HTTP/TLS/RDAP collection and offline static rendering are implemented but remain disabled by default. Review dates are calculated and surfaced locally, but never trigger a network request automatically. Shared database persistence, notification scheduling, Microsoft Graph, and optional LLM integration remain feature-gated until implemented and reviewed.
