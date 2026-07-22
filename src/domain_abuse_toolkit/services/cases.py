@@ -345,7 +345,7 @@ class CaseService:
         action_code = None
         if event.channel_category in {"user_protection", "authority_report"}:
             action_code = "prepare-user-protection"
-        elif event.channel_category == "registrar_report":
+        elif event.channel_category in {"registrar_report", "registry_report"}:
             action_code = "prepare-registrar"
         if action_code:
             action = next(

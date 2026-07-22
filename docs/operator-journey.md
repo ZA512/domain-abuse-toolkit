@@ -48,9 +48,11 @@ The mandatory checklist asks only questions that require judgment:
 
 The application displays its proposed criticality and the exact contributing rules. The operator confirms or overrides it with a reason.
 
-## Screen 4 — Action cockpit
+## Screen 4 — Reporting priorities
 
-Actions are ordered by due date and risk, not by technical actor.
+Reporting actions are ordered by operational importance: registrar first, user-protection
+services second, TLD registry third, and ICANN contractual escalation last. Contextual
+authority channels remain available separately.
 
 Each card contains:
 

@@ -661,6 +661,33 @@ def test_submission_form_uses_csrf_and_redirects_to_record(client: TestClient) -
     assert "Registrar abuse email" in detail.text
 
 
+def test_reporting_page_orders_operational_channels_by_priority(
+    client: TestClient,
+) -> None:
+    created = client.post(
+        "/api/v1/cases",
+        json={
+            "target": "https://lovebeauteprivee.shop/",
+            "brand": "Example Brand",
+            "legit_url": "https://www.example.com/",
+            "suspicion_type": "phishing",
+        },
+    ).json()
+
+    detail = client.get(f"/cases/{created['id']}?step=reporting")
+
+    assert detail.status_code == 200
+    registrar = detail.text.index("Report to the registrar")
+    protection = detail.text.index("Protect internet users")
+    registry = detail.text.index("Report to the TLD registry")
+    icann = detail.text.index("Escalate to ICANN Contractual Compliance")
+    assert registrar < protection < registry < icann
+    assert "Registrar not confirmed yet" in detail.text
+    assert "GMO Registry — .shop" in detail.text
+    assert "abuse@gmoregistry.com" in detail.text
+    assert "ICANN Contractual Compliance" in detail.text
+
+
 def test_evidence_archive_download_has_manifest_and_integrity_headers(
     client: TestClient,
 ) -> None:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from importlib.resources import files
+from urllib.parse import quote
 
 from pydantic import TypeAdapter, ValidationError
 
@@ -31,7 +32,18 @@ class ReportingService:
             raise ReportingCatalogueError("The reporting catalogue has duplicate identifiers.")
         self.channels = channels
 
-    def resolve_submission_channel(self, channel_id: str) -> dict[str, str]:
+    @staticmethod
+    def tld(case: CaseRecord) -> str:
+        return case.target.registrable_domain.rsplit(".", 1)[-1].casefold()
+
+    def _applies(self, channel: ReportingChannel, case: CaseRecord | None) -> bool:
+        return not channel.applicable_tlds or (
+            case is not None and self.tld(case) in channel.applicable_tlds
+        )
+
+    def resolve_submission_channel(
+        self, channel_id: str, case: CaseRecord | None = None
+    ) -> dict[str, str]:
         if channel_id == "registrar_email":
             return {
                 "id": "registrar_email",
@@ -45,6 +57,7 @@ class ReportingService:
                 if item.id == channel_id
                 and item.status == "active"
                 and item.category != "contact_discovery"
+                and self._applies(item, case)
             ),
             None,
         )
@@ -52,7 +65,7 @@ class ReportingService:
             raise ReportingCatalogueError("Unknown or unavailable reporting channel.")
         return {"id": channel.id, "name": channel.name, "category": channel.category}
 
-    def submission_options(self) -> list[dict[str, str]]:
+    def submission_options(self, case: CaseRecord | None = None) -> list[dict[str, str]]:
         options = [
             {
                 "id": "registrar_email",
@@ -63,7 +76,9 @@ class ReportingService:
         options.extend(
             {"id": channel.id, "name": channel.name, "category": channel.category}
             for channel in self.channels
-            if channel.status == "active" and channel.category != "contact_discovery"
+            if channel.status == "active"
+            and channel.category != "contact_discovery"
+            and self._applies(channel, case)
         )
         return options
 
@@ -88,12 +103,21 @@ class ReportingService:
                 and (qualification.victims_or_transactions or qualification.publicly_available)
             )
             return relevant, "Human decision required: use only when the official scope applies."
+        if channel.priority_group == "registry":
+            return (
+                True,
+                "Contact the TLD registry after the registrar and user-protection channels.",
+            )
+        if channel.priority_group == "icann":
+            return False, "Escalate only after a direct registrar or registry report."
         return False, "Available as an optional official channel."
 
     def channel_views(self, case: CaseRecord, translate=None) -> list[dict[str, object]]:
         views = []
         for channel in self.channels:
             if channel.status == "deprecated":
+                continue
+            if not self._applies(channel, case):
                 continue
             if channel.status == "review_needed":
                 recommended = False
@@ -119,6 +143,12 @@ class ReportingService:
                 reason = translate(
                     f"channel.{channel.id}.recommendation", default=reason
                 )
+            action_url = str(channel.action_url)
+            if channel.id == "icann_lookup":
+                action_url = (
+                    "https://lookup.icann.org/en/lookup?name="
+                    f"{quote(case.target.registrable_domain, safe='')}"
+                )
             views.append(
                 {
                     "channel": channel,
@@ -128,17 +158,68 @@ class ReportingService:
                     "notes": notes,
                     "required_fields": required_fields,
                     "category_label": category_label,
-                    "action_url": str(channel.action_url),
+                    "action_url": action_url,
                     "source_url": str(channel.source_url),
                 }
             )
+        group_rank = {
+            "discovery": 0,
+            "user_protection": 1,
+            "registry": 2,
+            "icann": 3,
+            "other": 4,
+        }
         return sorted(
             views,
             key=lambda item: (
+                group_rank[str(item["channel"].priority_group)],  # type: ignore[union-attr]
                 not bool(item["recommended"]),
                 str(item["channel"].name),  # type: ignore[union-attr]
             ),
         )
+
+    def grouped_channel_views(
+        self, case: CaseRecord, translate=None
+    ) -> dict[str, list[dict[str, object]]]:
+        groups = {
+            "discovery": [],
+            "user_protection": [],
+            "registry": [],
+            "icann": [],
+            "other": [],
+        }
+        for view in self.channel_views(case, translate):
+            group = str(view["channel"].priority_group)  # type: ignore[union-attr]
+            groups[group].append(view)
+        return groups
+
+    @staticmethod
+    def registrar_actor(case: CaseRecord) -> dict[str, str | bool | None]:
+        values: dict[str, str] = {}
+        wanted = {
+            "registrar.name": "name",
+            "registrar.handle": "handle",
+            "registrar.abuse_email": "email",
+        }
+        for snapshot in reversed(case.snapshots):
+            rdap = next(
+                (result for result in snapshot.results if result.collector == "rdap"),
+                None,
+            )
+            if rdap is None:
+                continue
+            for observation in rdap.observations:
+                key = wanted.get(observation.name)
+                if key and key not in values:
+                    values[key] = observation.value
+            if values:
+                break
+        return {
+            "known": bool(values.get("name") or values.get("email")),
+            "name": values.get("name"),
+            "handle": values.get("handle"),
+            "email": values.get("email"),
+        }
 
     @staticmethod
     def summaries(case: CaseRecord) -> dict[str, str]:

@@ -1,4 +1,14 @@
 {% extends "base.html" %}
+{% macro channel_card(item) %}
+  <article class="channel-card{% if item.recommended %} channel-recommended{% endif %}">
+    <div class="channel-card-heading"><span class="badge">{{ item.category_label }}</span>{% if item.recommended %}<span class="badge badge-safe">{{ t("case.reporting.recommended") }}</span>{% endif %}</div>
+    <h3>{{ item.channel.name }}</h3>
+    <p>{{ item.purpose }}</p>
+    <p class="channel-reason">{{ item.recommendation_reason }}</p>
+    <details><summary>{{ t("case.reporting.required") }}</summary><ul class="compact-list">{% for field in item.required_fields %}<li>{{ field }}</li>{% endfor %}</ul><p>{{ item.notes }}</p></details>
+    <div class="channel-card-footer"><small>{{ t("case.reporting.verified", date=item.channel.verified_on) }}</small><a class="button button-primary" href="{{ item.action_url }}" target="_blank" rel="noopener noreferrer">{{ t("case.reporting.open") }}</a></div>
+  </article>
+{% endmacro %}
 {% block title %}{{ case.id }} — Domain Abuse Toolkit{% endblock %}
 {% block content %}
   <nav class="breadcrumb"><a href="/">{{ t("case.cases") }}</a><span>/</span><span>{{ case.id }}</span></nav>
@@ -258,18 +268,77 @@
         </div>
         <p class="section-intro">{{ t("case.reporting.intro") }}</p>
 
-        <div class="channel-grid">
-          {% for item in reporting_channels %}
-            <article class="channel-card{% if item.recommended %} channel-recommended{% endif %}">
-              <div class="channel-card-heading"><span class="badge">{{ item.category_label }}</span>{% if item.recommended %}<span class="badge badge-safe">{{ t("case.reporting.recommended") }}</span>{% endif %}</div>
-              <h3>{{ item.channel.name }}</h3>
-              <p>{{ item.purpose }}</p>
-              <p class="channel-reason">{{ item.recommendation_reason }}</p>
-              <details><summary>{{ t("case.reporting.required") }}</summary><ul class="compact-list">{% for field in item.required_fields %}<li>{{ field }}</li>{% endfor %}</ul><p>{{ item.notes }}</p></details>
-              <div class="channel-card-footer"><small>{{ t("case.reporting.verified", date=item.channel.verified_on) }}</small><a class="button button-primary" href="{{ item.action_url }}" target="_blank" rel="noopener noreferrer">{{ t("case.reporting.open") }}</a></div>
-            </article>
-          {% endfor %}
+        <div class="reporting-priority-list">
+          <section class="reporting-tier reporting-tier-primary">
+            <div class="reporting-tier-heading"><span class="reporting-tier-number">1</span><div><p class="eyebrow">{{ t("case.reporting.priority_first") }}</p><h3>{{ t("case.reporting.registrar.title") }}</h3><p>{{ t("case.reporting.registrar.help") }}</p></div></div>
+            <div class="reporting-actor-card {{ 'actor-known' if registrar_actor.known else 'actor-unknown' }}">
+              <div>
+                {% if registrar_actor.known %}
+                  <span class="badge badge-safe">{{ t("case.reporting.identified") }}</span>
+                  <strong>{{ registrar_actor.name or t("case.reporting.registrar.identified") }}</strong>
+                  {% if registrar_actor.handle %}<small>{{ t("case.reporting.registrar.handle", handle=registrar_actor.handle) }}</small>{% endif %}
+                  {% if registrar_actor.email %}<a href="mailto:{{ registrar_actor.email }}">{{ registrar_actor.email }}</a>{% endif %}
+                {% else %}
+                  <span class="badge badge-warning">{{ t("case.reporting.to_identify") }}</span>
+                  <strong>{{ t("case.reporting.registrar.unknown") }}</strong>
+                  <small>{{ t("case.reporting.registrar.unknown_help") }}</small>
+                {% endif %}
+              </div>
+              {% if reporting_groups.discovery %}<a class="button" href="{{ reporting_groups.discovery[0].action_url }}" target="_blank" rel="noopener noreferrer">{{ t("case.reporting.registrar.lookup") }}</a>{% endif %}
+            </div>
+            <details class="priority-tool" open>
+              <summary>{{ t("case.reporting.registrar.prepare") }}</summary>
+              <label class="email-recipient">{{ t("case.reporting.recipient") }}<input id="email-recipient" type="email" maxlength="254" autocomplete="off" value="{{ registrar_actor.email or '' }}" placeholder="abuse@registrar.example"><small>{{ t("case.reporting.recipient_help") }}</small></label>
+              <div class="tabs" role="tablist" aria-label="{{ t('case.reporting.draft_language') }}">{% for item in drafts %}<button class="tab-button{% if loop.first %} active{% endif %}" data-tab-target="draft-{{ item.draft.language }}" type="button">{{ item.draft.language|upper }}</button>{% endfor %}</div>
+              {% for item in drafts %}
+                <article id="draft-{{ item.draft.language }}" class="draft{% if not loop.first %} hidden{% endif %}">
+                  <label>{{ t("case.reporting.subject") }}<input id="subject-{{ item.draft.language }}" value="{{ item.draft.subject }}" readonly></label>
+                  <label>{{ t("case.reporting.body") }}<textarea id="body-{{ item.draft.language }}" rows="12" readonly>{{ item.draft.body }}</textarea></label>
+                  <p class="draft-meta">{{ t("case.reporting.template", version=item.draft.template_version, fields=item.draft.missing_placeholders|join(', ')) }}</p>
+                  <div class="button-row"><button class="button" type="button" data-copy="#subject-{{ item.draft.language }}">{{ t("case.reporting.copy_subject") }}</button><button class="button" type="button" data-copy="#body-{{ item.draft.language }}">{{ t("case.reporting.copy_body") }}</button><a class="button button-primary" href="{{ item.mailto }}" data-email-draft data-recipient="#email-recipient" data-subject="#subject-{{ item.draft.language }}" data-body="#body-{{ item.draft.language }}">{{ t("case.reporting.open_mail") }}</a></div>
+                </article>
+              {% endfor %}
+            </details>
+          </section>
+
+          <section class="reporting-tier">
+            <div class="reporting-tier-heading"><span class="reporting-tier-number">2</span><div><h3>{{ t("case.reporting.protection.title") }}</h3><p>{{ t("case.reporting.protection.help") }}</p></div></div>
+            <div class="channel-grid">{% for item in reporting_groups.user_protection %}{{ channel_card(item) }}{% endfor %}</div>
+          </section>
+
+          <section class="reporting-tier">
+            <div class="reporting-tier-heading"><span class="reporting-tier-number">3</span><div><h3>{{ t("case.reporting.registry.title") }}</h3><p>{{ t("case.reporting.registry.help", tld=tld) }}</p></div></div>
+            {% if registry_channel %}
+              {{ channel_card(registry_channel) }}
+              <div class="registry-contact"><strong>{{ t("case.reporting.registry.contact") }}</strong><a href="mailto:{{ registry_channel.channel.recipient_email }}">{{ registry_channel.channel.recipient_email }}</a><a href="{{ registry_channel.source_url }}" target="_blank" rel="noopener noreferrer">{{ t("case.reporting.registry.iana_source") }}</a></div>
+              <details class="priority-tool">
+                <summary>{{ t("case.reporting.registry.prepare") }}</summary>
+                <div class="tabs" role="tablist" aria-label="{{ t('case.reporting.draft_language') }}">{% for item in registry_drafts %}<button class="tab-button{% if loop.first %} active{% endif %}" data-tab-target="registry-draft-{{ item.draft.language }}" type="button">{{ item.draft.language|upper }}</button>{% endfor %}</div>
+                {% for item in registry_drafts %}
+                  <article id="registry-draft-{{ item.draft.language }}" class="draft{% if not loop.first %} hidden{% endif %}">
+                    <label>{{ t("case.reporting.subject") }}<input id="registry-subject-{{ item.draft.language }}" value="{{ item.draft.subject }}" readonly></label>
+                    <label>{{ t("case.reporting.body") }}<textarea id="registry-body-{{ item.draft.language }}" rows="12" readonly>{{ item.draft.body }}</textarea></label>
+                    <div class="button-row"><button class="button" type="button" data-copy="#registry-subject-{{ item.draft.language }}">{{ t("case.reporting.copy_subject") }}</button><button class="button" type="button" data-copy="#registry-body-{{ item.draft.language }}">{{ t("case.reporting.copy_body") }}</button><a class="button button-primary" href="{{ item.mailto }}">{{ t("case.reporting.open_mail") }}</a></div>
+                  </article>
+                {% endfor %}
+              </details>
+            {% else %}
+              <div class="reporting-actor-card actor-unknown"><div><span class="badge badge-warning">{{ t("case.reporting.to_identify") }}</span><strong>{{ t("case.reporting.registry.unknown", tld=tld) }}</strong><small>{{ t("case.reporting.registry.unknown_help") }}</small></div><a class="button" href="{{ tld_authority_lookup_url }}" target="_blank" rel="noopener noreferrer">{{ t("case.reporting.registry.open_iana") }}</a></div>
+            {% endif %}
+          </section>
+
+          <section class="reporting-tier reporting-tier-escalation">
+            <div class="reporting-tier-heading"><span class="reporting-tier-number">4</span><div><p class="eyebrow">{{ t("case.reporting.last_resort") }}</p><h3>{{ t("case.reporting.icann.title") }}</h3><p>{{ t("case.reporting.icann.help") }}</p></div></div>
+            <div class="channel-grid">{% for item in reporting_groups.icann %}{{ channel_card(item) }}{% endfor %}</div>
+          </section>
         </div>
+
+        {% if reporting_groups.other %}
+          <details class="toolbox-disclosure">
+            <summary>{{ t("case.reporting.other") }}</summary>
+            <div class="channel-grid">{% for item in reporting_groups.other %}{{ channel_card(item) }}{% endfor %}</div>
+          </details>
+        {% endif %}
 
         <details class="toolbox-disclosure">
           <summary>{{ t("case.reporting.copy_summary") }}</summary>
@@ -277,20 +346,6 @@
             <article class="report-summary"><label>{{ t("case.reporting.french_summary") }}<textarea id="report-summary-fr" rows="10" readonly>{{ reporting_summaries.fr }}</textarea></label><button class="button" type="button" data-copy="#report-summary-fr">{{ t("case.reporting.copy_french") }}</button></article>
             <article class="report-summary"><label>{{ t("case.reporting.english_summary") }}<textarea id="report-summary-en" rows="10" readonly>{{ reporting_summaries.en }}</textarea></label><button class="button" type="button" data-copy="#report-summary-en">{{ t("case.reporting.copy_english") }}</button></article>
           </div>
-        </details>
-
-        <details class="toolbox-disclosure">
-          <summary>{{ t("case.reporting.email") }}</summary>
-          <label class="email-recipient">{{ t("case.reporting.recipient") }}<input id="email-recipient" type="email" maxlength="254" autocomplete="off" placeholder="abuse@registrar.example"><small>{{ t("case.reporting.recipient_help") }}</small></label>
-          <div class="tabs" role="tablist" aria-label="{{ t('case.reporting.draft_language') }}">{% for item in drafts %}<button class="tab-button{% if loop.first %} active{% endif %}" data-tab-target="draft-{{ item.draft.language }}" type="button">{{ item.draft.language|upper }}</button>{% endfor %}</div>
-          {% for item in drafts %}
-            <article id="draft-{{ item.draft.language }}" class="draft{% if not loop.first %} hidden{% endif %}">
-              <label>{{ t("case.reporting.subject") }}<input id="subject-{{ item.draft.language }}" value="{{ item.draft.subject }}" readonly></label>
-              <label>{{ t("case.reporting.body") }}<textarea id="body-{{ item.draft.language }}" rows="14" readonly>{{ item.draft.body }}</textarea></label>
-              <p class="draft-meta">{{ t("case.reporting.template", version=item.draft.template_version, fields=item.draft.missing_placeholders|join(', ')) }}</p>
-              <div class="button-row"><button class="button" type="button" data-copy="#subject-{{ item.draft.language }}">{{ t("case.reporting.copy_subject") }}</button><button class="button" type="button" data-copy="#body-{{ item.draft.language }}">{{ t("case.reporting.copy_body") }}</button><a class="button button-primary" href="{{ item.mailto }}" data-email-draft data-recipient="#email-recipient" data-subject="#subject-{{ item.draft.language }}" data-body="#body-{{ item.draft.language }}">{{ t("case.reporting.open_mail") }}</a></div>
-            </article>
-          {% endfor %}
         </details>
 
         <details id="record-submission" class="task-disclosure" {% if submission_error %}open{% endif %}>

@@ -76,7 +76,8 @@ available_languages = tuple(
 )
 templates.env.globals.update(t=translator, ui_language=translator.locale)
 
-case_service = CaseService(EvidenceStore(settings.data_dir), DraftService())
+draft_service = DraftService()
+case_service = CaseService(EvidenceStore(settings.data_dir), draft_service)
 export_service = EvidenceExportService(
     case_service.evidence_store,
     max_uncompressed_bytes=settings.max_export_bytes,
@@ -177,13 +178,13 @@ async def security_headers(request: Request, call_next):  # type: ignore[no-unty
     return response
 
 
-def _mailto(draft: Draft) -> str:
+def _mailto(draft: Draft, recipient: str = "") -> str:
     query = urlencode(
         {"subject": draft.subject, "body": draft.body},
         quote_via=quote,
         safe="",
     )
-    return f"mailto:?{query}"
+    return f"mailto:{quote(recipient, safe='@')}?{query}"
 
 
 def _verify_form_csrf(token: str) -> None:
@@ -277,7 +278,30 @@ def _case_context(
         record = case_service.get(case_id)
     except CaseNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Case not found") from exc
-    drafts = [{"draft": draft, "mailto": _mailto(draft)} for draft in record.drafts]
+    registrar_actor = reporting_service.registrar_actor(record)
+    registrar_recipient = str(registrar_actor["email"] or "")
+    drafts = [
+        {"draft": draft, "mailto": _mailto(draft, registrar_recipient)}
+        for draft in record.drafts
+    ]
+    reporting_groups = reporting_service.grouped_channel_views(
+        record, selected_translator
+    )
+    registry_channel = (
+        reporting_groups["registry"][0] if reporting_groups["registry"] else None
+    )
+    registry_drafts: list[dict[str, object]] = []
+    if registry_channel:
+        channel = registry_channel["channel"]
+        recipient = str(channel.recipient_email or "")
+        registry_drafts = [
+            {"draft": draft, "mailto": _mailto(draft, recipient)}
+            for draft in draft_service.registry_drafts(
+                record,
+                registry_name=channel.name.split(" — ", 1)[0],
+                tld=f".{reporting_service.tld(record)}",
+            )
+        ]
     now = datetime.now(UTC)
     actions = []
     for action in record.actions:
@@ -362,11 +386,18 @@ def _case_context(
         "form_csrf_token": form_csrf_token,
         "integrity_errors": integrity_errors,
         "artifact_count": artifact_count,
-        "reporting_channels": reporting_service.channel_views(
-            record, selected_translator
+        "reporting_channels": reporting_service.channel_views(record, selected_translator),
+        "reporting_groups": reporting_groups,
+        "registrar_actor": registrar_actor,
+        "registry_channel": registry_channel,
+        "registry_drafts": registry_drafts,
+        "tld": reporting_service.tld(record),
+        "tld_authority_lookup_url": (
+            "https://www.iana.org/domains/root/db/"
+            f"{quote(reporting_service.tld(record), safe='')}.html"
         ),
         "reporting_summaries": reporting_service.summaries(record),
-        "submission_options": reporting_service.submission_options(),
+        "submission_options": reporting_service.submission_options(record),
         "latest_submission": record.submissions[-1] if record.submissions else None,
         "latest_collection_job": latest_collection_job,
         "latest_snapshot": latest_snapshot,
@@ -692,7 +723,8 @@ def record_submission_form(
             notes=notes,
             confirmed_submitted=confirmed_submitted,
         )
-        channel = reporting_service.resolve_submission_channel(channel_id)
+        record = case_service.get(case_id)
+        channel = reporting_service.resolve_submission_channel(channel_id, record)
         case_service.record_submission(
             case_id,
             submission,
@@ -903,7 +935,10 @@ def record_submission_api(
     case_id: str, submission: SubmissionCreate
 ) -> dict[str, object]:
     try:
-        channel = reporting_service.resolve_submission_channel(submission.channel_id)
+        existing = case_service.get(case_id)
+        channel = reporting_service.resolve_submission_channel(
+            submission.channel_id, existing
+        )
         record = case_service.record_submission(
             case_id,
             submission,

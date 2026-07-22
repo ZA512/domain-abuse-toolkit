@@ -311,6 +311,11 @@ class ReportingChannel(BaseModel):
     source_url: AnyHttpUrl
     verified_on: date
     status: Literal["active", "review_needed", "deprecated"]
+    priority_group: Literal[
+        "discovery", "user_protection", "registry", "icann", "other"
+    ]
+    applicable_tlds: list[str] = Field(default_factory=list)
+    recipient_email: str | None = Field(default=None, max_length=254)
     required_fields: list[str]
     notes: str
 
@@ -320,3 +325,21 @@ class ReportingChannel(BaseModel):
         if value.scheme != "https" or value.username or value.password:
             raise ValueError("Reporting catalogue URLs must be credential-free HTTPS URLs.")
         return value
+
+    @field_validator("applicable_tlds")
+    @classmethod
+    def validate_tlds(cls, values: list[str]) -> list[str]:
+        normalized = [value.strip().casefold().lstrip(".") for value in values]
+        if any(not value or not value.replace("-", "").isalnum() for value in normalized):
+            raise ValueError("Applicable TLDs must contain valid labels.")
+        return normalized
+
+    @field_validator("recipient_email")
+    @classmethod
+    def validate_recipient_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if normalized.count("@") != 1 or "." not in normalized.rsplit("@", 1)[1]:
+            raise ValueError("The reporting recipient email is invalid.")
+        return normalized
