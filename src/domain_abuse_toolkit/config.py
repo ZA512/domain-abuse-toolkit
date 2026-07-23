@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     data_dir: Path = Path("./case-data")
     max_export_bytes: int = Field(default=100 * 1024 * 1024, ge=1024 * 1024)
     public_base_url: str = "http://127.0.0.1:8080"
+    ui_language: str = Field(default="en", pattern=r"^[a-z]{2}(?:-[A-Z]{2})?$")
 
     enable_network_collection: bool = False
     dns_timeout_seconds: float = Field(default=2.0, ge=0.2, le=10)
@@ -31,7 +32,7 @@ class Settings(BaseSettings):
     http_read_timeout_seconds: float = Field(default=5.0, ge=0.5, le=30)
     http_total_timeout_seconds: float = Field(default=30.0, ge=2, le=120)
     http_max_redirects: int = Field(default=5, ge=0, le=10)
-    http_max_body_bytes: int = Field(default=256 * 1024, ge=1024, le=1024 * 1024)
+    http_max_body_bytes: int = Field(default=1024 * 1024, ge=1024, le=1024 * 1024)
     enable_rdap_collection: bool = False
     rdap_max_response_bytes: int = Field(
         default=1024 * 1024, ge=64 * 1024, le=4 * 1024 * 1024
@@ -42,7 +43,7 @@ class Settings(BaseSettings):
     enable_screenshots: bool = False
     screenshot_timeout_seconds: float = Field(default=25.0, ge=5, le=60)
     screenshot_max_input_bytes: int = Field(
-        default=256 * 1024, ge=16 * 1024, le=1024 * 1024
+        default=1024 * 1024, ge=16 * 1024, le=1024 * 1024
     )
     screenshot_max_output_bytes: int = Field(
         default=10 * 1024 * 1024, ge=256 * 1024, le=25 * 1024 * 1024

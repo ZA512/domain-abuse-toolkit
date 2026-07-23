@@ -40,8 +40,10 @@ def test_catalogue_contains_only_unique_active_https_channels() -> None:
         "google_malware",
         "google_phishing",
         "icann_lookup",
+        "icann_compliance",
         "microsoft_unsafe_site",
         "pharos_fr",
+        "registry_gmo_shop",
     }
     assert all(channel.status == "active" for channel in service.channels)
     assert all(str(channel.action_url).startswith("https://") for channel in service.channels)
@@ -92,3 +94,50 @@ def test_only_real_reporting_channels_can_be_recorded() -> None:
     assert all(option["category"] != "contact_discovery" for option in service.submission_options())
     with pytest.raises(ReportingCatalogueError, match="Unknown or unavailable"):
         service.resolve_submission_channel("icann_lookup")
+
+
+def test_shop_registry_is_scoped_and_icann_is_last(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    case_service = CaseService(EvidenceStore(tmp_path), DraftService())
+    shop_case = case_service.create(
+        CaseCreate(
+            target="https://lovebeauteprivee.shop/",
+            brand="Example Brand",
+            legit_url="https://www.example.com/",
+        )
+    )
+    net_case = _qualified_case(tmp_path)
+    service = ReportingService()
+
+    shop_groups = service.grouped_channel_views(shop_case)
+    assert [item["channel"].id for item in shop_groups["registry"]] == [  # type: ignore[union-attr]
+        "registry_gmo_shop"
+    ]
+    assert shop_groups["icann"][0]["channel"].id == "icann_compliance"  # type: ignore[union-attr]
+    assert all(
+        option["id"] != "registry_gmo_shop"
+        for option in service.submission_options(net_case)
+    )
+    assert any(
+        option["id"] == "registry_gmo_shop"
+        for option in service.submission_options(shop_case)
+    )
+
+
+def test_registry_draft_targets_the_official_tld_operator(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    case_service = CaseService(EvidenceStore(tmp_path), DraftService())
+    case = case_service.create(
+        CaseCreate(
+            target="https://lovebeauteprivee.shop/",
+            brand="Example Brand",
+            legit_url="https://www.example.com/",
+        )
+    )
+
+    drafts = DraftService().registry_drafts(
+        case, registry_name="GMO Registry — .shop", tld=".shop"
+    )
+
+    assert len(drafts) == 2
+    assert "lovebeauteprivee.shop" in drafts[0].subject
+    assert "GMO Registry" in drafts[0].body
+    assert "Référence interne" in drafts[1].body

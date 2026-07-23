@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ ui_language }}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,14 +7,26 @@
     <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
     <script src="{{ url_for('static', path='/app.js') }}" defer></script>
   </head>
-  <body>
+  <body data-copied-label="{{ t('common.copied') }}">
     <header class="site-header">
       <a class="brand" href="/">Domain Abuse Toolkit</a>
-      <span class="badge badge-safe">Human-in-the-loop</span>
+      <div class="site-header-tools">
+        <form class="language-form" action="/language" method="post" data-language-form>
+          <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
+          <input type="hidden" name="return_to" value="{{ language_return_to }}" data-language-return>
+          <label for="ui-language">{{ t("language.label") }}</label>
+          <select id="ui-language" name="locale" data-language-select>
+            {% for language in available_languages %}
+              <option value="{{ language.code }}"{% if language.code == ui_language %} selected{% endif %}>{{ language.name }}</option>
+            {% endfor %}
+          </select>
+          <button class="button language-submit" type="submit">{{ t("language.apply") }}</button>
+        </form>
+        <span class="badge badge-safe">{{ t("app.human_validation") }}</span>
+      </div>
     </header>
     <main class="shell">
       {% block content %}{% endblock %}
     </main>
   </body>
 </html>
-

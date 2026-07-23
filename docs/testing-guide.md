@@ -4,10 +4,19 @@ Ce premier test valide le parcours produit sans contacter de site suspect.
 
 ## Prérequis
 
-- Windows 10 ou 11 ;
-- WSL 2 avec Ubuntu ;
-- Python 3.12 ou supérieur dans WSL ;
-- accès Internet lors du premier lancement pour installer les dépendances Python.
+- Windows 10 ou 11 avec Docker Desktop pour le lancement recommandé ;
+- accès Internet lors du premier lancement pour télécharger l'image Python et installer les dépendances ;
+- WSL 2 avec Ubuntu et Python 3.12 ou supérieur uniquement pour les lanceurs historiques et le mode de collecte passive actuel.
+
+## Lancer l'application avec Docker (recommande)
+
+1. démarrer Docker Desktop ;
+2. arrêter toute copie utilisant déjà le port 8080 ;
+3. double-cliquer sur `START_TOOLKIT_DOCKER.cmd` ;
+4. ouvrir `http://127.0.0.1:8080/` si le navigateur ne s'ouvre pas ;
+5. arrêter avec `STOP_TOOLKIT_DOCKER.cmd`.
+
+Le premier démarrage construit l'image et peut prendre quelques minutes. Les dossiers sont conservés dans le volume Docker nommé `domain-abuse-toolkit-evidence`. L'arrêt ne supprime pas ce volume. Ce profil est entièrement local : la collecte réseau, les captures, l'IA, Microsoft Graph et les envois sont désactivés, et le réseau Docker interne n'offre aucune sortie Internet.
 
 Les dossiers de test sont conservés dans le répertoire privé WSL :
 
@@ -17,9 +26,9 @@ Les dossiers de test sont conservés dans le répertoire privé WSL :
 
 Ils ne sont pas écrits dans le dépôt Git public.
 
-## Lancer l’application
+## Lancer l'application avec WSL (transition)
 
-Double-cliquer sur `START_TOOLKIT.cmd` à la racine du projet.
+Double-cliquer sur `START_TOOLKIT.cmd` à la racine du projet. Cette voie reste disponible pendant la migration vers Docker Compose.
 
 Le lanceur :
 
@@ -35,7 +44,7 @@ Pour arrêter, utiliser `Ctrl+C` dans la fenêtre intitulée **Domain Abuse Tool
 
 ## Activer volontairement la collecte technique
 
-Le lancement standard conserve tout accès réseau désactivé. Pour tester le premier collecteur :
+Le lancement standard et le profil Docker conservent tout accès réseau désactivé. Pour tester le collecteur actuel, utiliser temporairement le lanceur WSL dédié :
 
 1. démarrer Docker Desktop ;
 2. arrêter le serveur avec `STOP_TOOLKIT.cmd` ;
@@ -45,6 +54,24 @@ Le lancement standard conserve tout accès réseau désactivé. Pour tester le p
 6. ouvrir un dossier synthétique autorisé ;
 7. cocher l’autorisation dans **Collection**, puis cliquer sur **Start passive evidence collection** ;
 8. rafraîchir la fiche si le job est encore `queued` ou `running`.
+
+### Tester le suivi UP/DOWN planifié
+
+Ce test contacte périodiquement la cible. Il doit donc être effectué uniquement en mode
+réseau et sur une cible autorisée :
+
+1. ouvrir l'étape **Suivi** d'un dossier disposant déjà d'un relevé technique ;
+2. vérifier que la dernière disponibilité affiche `UP`, `DOWN probable` ou `Inconnu`,
+   avec l'heure du contrôle ;
+3. choisir une fréquence dans **Contrôles UP/DOWN planifiés** ;
+4. confirmer l'autorisation continue puis activer la surveillance ;
+5. vérifier la date exacte du prochain contrôle sur le dossier et l'accueil.
+
+Le planificateur ne fonctionne que tant que Domain Abuse Toolkit est ouvert. Sa
+configuration est persistée : après un redémarrage, un contrôle en retard est repris.
+Chaque passage planifié collecte uniquement DNS, HTTP et TLS. Il ne lance ni RDAP, ni
+capture, ni JavaScript, ni formulaire, ni message. `UP` signifie seulement qu'une réponse
+HTTP a été reçue ; `DOWN probable` doit être confirmé par un humain.
 
 Si le Dockerfile ou le worker de capture a été modifié, un mainteneur peut forcer la reconstruction avec :
 
@@ -82,6 +109,7 @@ Vérifier ensuite :
 - qu’une adresse saisie dans **Email recipient** est ajoutée au brouillon ouvert dans le client mail.
 - qu’une soumission réellement effectuée peut être confirmée dans **Record a completed submission** avec sa référence externe ;
 - que le dossier passe à `waiting_external` et affiche automatiquement la prochaine échéance de relance.
+- que l'accueil et l'étape **Suivi** affichent la prochaine action de procédure, sa date exacte et un indicateur lorsqu'elle est à faire ;
 - en mode réseau volontaire, qu’un snapshot affiche les résultats DNS, HTTP, TLS, RDAP et SCREENSHOT, montre la capture statique avec les feuilles CSS externes admissibles, et ajoute le HTML, les CSS et la capture dérivée au ZIP de preuve ;
 - qu’après une deuxième collecte, les changements normalisés apparaissent avant les détails bruts et que la prochaine date de contrôle est visible dans le dossier et sur l’accueil.
 

@@ -11,6 +11,7 @@ class CaseState(StrEnum):
     NEW = "new"
     COLLECTING = "collecting"
     NEEDS_VALIDATION = "needs_validation"
+    QUALIFIED = "qualified"
     READY_TO_REPORT = "ready_to_report"
     WAITING_EXTERNAL = "waiting_external"
     FOLLOW_UP_DUE = "follow_up_due"
@@ -113,6 +114,60 @@ class CollectionStart(BaseModel):
     confirmed_authorized: bool = False
 
 
+class MonitoringUpdate(BaseModel):
+    enabled: bool
+    confirmed_authorized: bool = False
+    interval_hours: int = Field(default=24, ge=6, le=168)
+
+
+class MonitoringEvent(BaseModel):
+    id: str
+    case_id: str
+    event_type: Literal["monitoring_configured"] = "monitoring_configured"
+    enabled: bool
+    interval_hours: int = Field(ge=6, le=168)
+    occurred_at: datetime
+
+
+class CaseLifecycleUpdate(BaseModel):
+    action: Literal["close", "reopen"]
+    operator: str = Field(min_length=1, max_length=80)
+    reason: str = Field(min_length=1, max_length=1000)
+    resolution: CaseState | None = None
+
+    @field_validator("operator")
+    @classmethod
+    def validate_lifecycle_operator(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Operator must not be blank.")
+        if any(ord(character) < 32 or ord(character) == 127 for character in normalized):
+            raise ValueError("Operator must not contain control characters.")
+        return normalized
+
+    @field_validator("reason")
+    @classmethod
+    def validate_lifecycle_reason(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("A lifecycle reason is required.")
+        if any(ord(character) < 32 and character not in "\r\n\t" for character in normalized):
+            raise ValueError("Lifecycle reason contains a prohibited control character.")
+        return normalized
+
+
+class CaseLifecycleEvent(BaseModel):
+    id: str
+    case_id: str
+    event_type: Literal["case_lifecycle_changed"] = "case_lifecycle_changed"
+    action: Literal["close", "reopen"]
+    previous_state: CaseState
+    new_state: CaseState
+    operator: str = Field(min_length=1, max_length=80)
+    reason: str = Field(min_length=1, max_length=1000)
+    occurred_at: datetime
+
+
 class QualificationSubmission(BaseModel):
     brand_represented: bool
     copied_elements: bool
@@ -194,6 +249,18 @@ class SubmissionEvent(BaseModel):
     follow_up_due_at: datetime
 
 
+class ManualEvidenceEvent(BaseModel):
+    id: str
+    case_id: str
+    event_type: Literal["manual_evidence_recorded"] = "manual_evidence_recorded"
+    evidence_type: Literal["rdap"] = "rdap"
+    source_url: str = Field(max_length=4096)
+    artifact_path: str
+    operator: str = Field(min_length=1, max_length=80)
+    notes: str | None = Field(default=None, max_length=1000)
+    occurred_at: datetime
+
+
 class CollectorError(BaseModel):
     code: str
     message: str
@@ -234,7 +301,7 @@ class SnapshotEvent(BaseModel):
     id: str
     case_id: str
     event_type: Literal["snapshot_recorded"] = "snapshot_recorded"
-    trigger: Literal["manual"] = "manual"
+    trigger: Literal["manual", "scheduled"] = "manual"
     status: CollectorStatus
     started_at: datetime
     finished_at: datetime
@@ -268,7 +335,11 @@ class CaseRecord(BaseModel):
     criticality_confirmed: Criticality | None = None
     qualification: QualificationEvent | None = None
     submissions: list[SubmissionEvent] = Field(default_factory=list)
+    manual_evidence: list[ManualEvidenceEvent] = Field(default_factory=list)
     snapshots: list[SnapshotEvent] = Field(default_factory=list)
+    monitoring_enabled: bool = False
+    monitoring_interval_hours: int = Field(default=24, ge=6, le=168)
+    monitoring_authorized_at: datetime | None = None
     actions: list[SuggestedAction]
     drafts: list[Draft]
     created_at: datetime
@@ -297,6 +368,11 @@ class ReportingChannel(BaseModel):
     source_url: AnyHttpUrl
     verified_on: date
     status: Literal["active", "review_needed", "deprecated"]
+    priority_group: Literal[
+        "discovery", "user_protection", "registry", "icann", "other"
+    ]
+    applicable_tlds: list[str] = Field(default_factory=list)
+    recipient_email: str | None = Field(default=None, max_length=254)
     required_fields: list[str]
     notes: str
 
@@ -306,3 +382,21 @@ class ReportingChannel(BaseModel):
         if value.scheme != "https" or value.username or value.password:
             raise ValueError("Reporting catalogue URLs must be credential-free HTTPS URLs.")
         return value
+
+    @field_validator("applicable_tlds")
+    @classmethod
+    def validate_tlds(cls, values: list[str]) -> list[str]:
+        normalized = [value.strip().casefold().lstrip(".") for value in values]
+        if any(not value or not value.replace("-", "").isalnum() for value in normalized):
+            raise ValueError("Applicable TLDs must contain valid labels.")
+        return normalized
+
+    @field_validator("recipient_email")
+    @classmethod
+    def validate_recipient_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if normalized.count("@") != 1 or "." not in normalized.rsplit("@", 1)[1]:
+            raise ValueError("The reporting recipient email is invalid.")
+        return normalized

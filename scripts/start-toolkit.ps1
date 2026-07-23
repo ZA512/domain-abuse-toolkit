@@ -11,6 +11,11 @@ param(
 
     [switch]$ForceCaptureImageBuild,
 
+    [switch]$ReuseExisting,
+
+    [ValidatePattern('^[a-z]{2}(-[A-Z]{2})?$')]
+    [string]$UiLanguage = 'en',
+
     [ValidateSet('Normal', 'Hidden')]
     [string]$ServerWindowStyle = 'Normal'
 )
@@ -53,11 +58,13 @@ if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
 
 $existing = Get-ToolkitHealth -Uri $healthUrl
 if ($existing) {
-    Write-Host "L'application est deja disponible (version $($existing.version))." -ForegroundColor Yellow
-    if (-not $NoBrowser) {
-        Start-Process $applicationUrl
+    if ($ReuseExisting) {
+        Write-Host "L'application est deja disponible (version $($existing.version))." -ForegroundColor Yellow
+        if (-not $NoBrowser) {
+            Start-Process $applicationUrl
+        }
+        exit 0
     }
-    exit 0
 }
 
 $pythonVersionOutput = (& wsl.exe python3 --version 2>&1).Trim()
@@ -136,6 +143,33 @@ if ($LASTEXITCODE -ne 0) {
     throw 'La preparation Python a echoue.'
 }
 
+if ($existing) {
+    Write-Host "Les prerequis sont prets. Redemarrage de l'instance existante pour appliquer le code et les options actuels..." -ForegroundColor Yellow
+    $serverPidFile = "/home/$(& wsl.exe whoami)/.local/share/domain-abuse-toolkit/server-$Port.pid"
+    $serverPid = (& wsl.exe cat $serverPidFile 2>$null).Trim()
+    if ($serverPid -notmatch '^\d+$') {
+        throw "Le port $Port est occupe par une instance qui ne peut pas etre redemarree automatiquement. Fermez sa fenetre serveur puis relancez."
+    }
+    $serverCommandLine = (& wsl.exe sh -c "tr '\000' ' ' </proc/$serverPid/cmdline" 2>$null).Trim()
+    if ($serverCommandLine -notmatch 'uvicorn domain_abuse_toolkit\.main:app' -or
+        $serverCommandLine -notmatch "--port $Port(?: |$)") {
+        throw "Le port $Port est occupe par un autre processus. Arretez-le manuellement avant de relancer."
+    }
+    & wsl.exe kill $serverPid
+    if ($LASTEXITCODE -ne 0) {
+        throw "Impossible d'arreter l'ancienne instance sur le port $Port."
+    }
+    for ($stopAttempt = 0; $stopAttempt -lt 20; $stopAttempt++) {
+        Start-Sleep -Milliseconds 250
+        if (-not (Get-ToolkitHealth -Uri $healthUrl)) {
+            break
+        }
+    }
+    if (Get-ToolkitHealth -Uri $healthUrl) {
+        throw "L'ancienne instance ne s'est pas arretee dans le delai imparti."
+    }
+}
+
 $serverCommand = @"
 set -eu
 REPO=$repoLiteral
@@ -144,6 +178,7 @@ cd "`$REPO"
 export DAT_DATA_DIR="`$HOME/.local/share/domain-abuse-toolkit/case-data"
 export DAT_PORT=$Port
 export DAT_PUBLIC_BASE_URL="http://127.0.0.1:$Port"
+export DAT_UI_LANGUAGE="$UiLanguage"
 export DAT_ENABLE_NETWORK_COLLECTION=$networkCollectionValue
 export DAT_ENABLE_RDAP_COLLECTION=$networkCollectionValue
 export DAT_ENABLE_SCREENSHOTS=$screenshotValue

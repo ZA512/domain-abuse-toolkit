@@ -26,3 +26,12 @@ jobs:
         run: ruff check .
       - name: Test
         run: pytest
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+      - name: Build safe runtime images
+        run: docker compose build

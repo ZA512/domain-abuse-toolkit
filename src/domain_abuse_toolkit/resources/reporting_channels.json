@@ -10,6 +10,7 @@
       "source_url": "https://lookup.icann.org/en/faq",
       "verified_on": "2026-07-21",
       "status": "active",
+      "priority_group": "discovery",
       "required_fields": ["Registrable domain"],
       "notes": "Registrar Information can expose the registrar name, IANA ID, abuse email and abuse phone. Coverage varies for ccTLDs."
     },
@@ -22,6 +23,7 @@
       "source_url": "https://safebrowsing.google.com/",
       "verified_on": "2026-07-21",
       "status": "active",
+      "priority_group": "user_protection",
       "required_fields": ["Exact suspicious URL", "Short factual comment", "CAPTCHA"],
       "notes": "Use the exact page URL. Submission is manual and remains subject to Google's review."
     },
@@ -34,6 +36,7 @@
       "source_url": "https://safebrowsing.google.com/",
       "verified_on": "2026-07-21",
       "status": "active",
+      "priority_group": "user_protection",
       "required_fields": ["Exact suspicious URL", "Short factual comment", "CAPTCHA"],
       "notes": "Choose this channel for observed malware or unwanted-software behavior, not ordinary impersonation alone."
     },
@@ -46,6 +49,7 @@
       "source_url": "https://www.microsoft.com/en-us/wdsi/support/report-unsafe-site",
       "verified_on": "2026-07-21",
       "status": "active",
+      "priority_group": "user_protection",
       "required_fields": ["Exact suspicious URL", "Threat classification", "Sign-in or guest choice"],
       "notes": "Microsoft states that corporate account holders can report multiple URLs in one submission."
     },
@@ -58,8 +62,37 @@
       "source_url": "https://www.service-public.gouv.fr/particuliers/vosdroits/R17674",
       "verified_on": "2026-07-21",
       "status": "active",
+      "priority_group": "other",
       "required_fields": ["Content category", "Date and time", "Exact URL", "Situation description", "Reporter details"],
       "notes": "PHAROS is not an emergency service. The operator must decide whether the observed content falls within the official scope."
+    },
+    {
+      "id": "registry_gmo_shop",
+      "name": "GMO Registry — .shop",
+      "category": "registry_report",
+      "purpose": "Report abuse involving a .shop domain to the TLD registry operator.",
+      "action_url": "https://www.gmoregistry.com/en/abuse/",
+      "source_url": "https://www.iana.org/domains/root/db/shop",
+      "verified_on": "2026-07-22",
+      "status": "active",
+      "priority_group": "registry",
+      "applicable_tlds": ["shop"],
+      "recipient_email": "abuse@gmoregistry.com",
+      "required_fields": ["Registrable domain", "Exact suspicious URL", "Date and time", "Situation description", "Evidence summary", "Reporter details"],
+      "notes": "GMO Registry is the IANA-listed operator for .shop and publishes this abuse contact for domains under its management."
+    },
+    {
+      "id": "icann_compliance",
+      "name": "ICANN Contractual Compliance",
+      "category": "contractual_escalation",
+      "purpose": "Escalate a DNS-abuse complaint when the responsible registrar or registry has not handled a prior report appropriately.",
+      "action_url": "https://www.icann.org/compliance/complaint",
+      "source_url": "https://www.icann.org/compliance/complaint",
+      "verified_on": "2026-07-22",
+      "status": "active",
+      "priority_group": "icann",
+      "required_fields": ["Registrable domain", "Prior report evidence", "External reference", "Date and time", "Evidence summary"],
+      "notes": "Use as an escalation after reporting directly to the registrar or registry. Keep the initial report, acknowledgement, reference and any response."
     }
   ]
 }

@@ -5,14 +5,17 @@ from pydantic import ValidationError
 
 from domain_abuse_toolkit.models import (
     CaseCreate,
+    CaseLifecycleUpdate,
     CaseState,
     Criticality,
+    MonitoringUpdate,
     QualificationSubmission,
     SubmissionCreate,
     Urgency,
 )
 from domain_abuse_toolkit.services.cases import (
     CaseService,
+    ManualEvidenceValidationError,
     QualificationValidationError,
     SubmissionValidationError,
 )
@@ -66,6 +69,113 @@ def test_cases_are_restored_from_verified_local_records(tmp_path) -> None:  # ty
     assert restarted_service.load_warnings == []
 
 
+def test_case_lifecycle_is_audited_persistent_and_stops_monitoring(
+    tmp_path,
+) -> None:  # type: ignore[no-untyped-def]
+    service = CaseService(EvidenceStore(tmp_path), DraftService())
+    case = service.create(
+        CaseCreate(
+            target="https://test.example.net/",
+            brand="Test Brand",
+            legit_url="https://www.example.com/",
+        )
+    )
+    service.configure_monitoring(
+        case.id,
+        MonitoringUpdate(
+            enabled=True,
+            confirmed_authorized=True,
+            interval_hours=24,
+        ),
+    )
+
+    service.change_lifecycle(
+        case.id,
+        CaseLifecycleUpdate(
+            action="close",
+            resolution=CaseState.CLOSED,
+            operator="MG",
+            reason="Test case no longer needs operational follow-up.",
+        ),
+    )
+
+    assert case.state == CaseState.CLOSED
+    assert not case.monitoring_enabled
+    assert case.monitoring_authorized_at is None
+    closed_event = service.history(case.id)[0]
+    assert closed_event.event_type == "case_lifecycle_changed"
+    assert closed_event.previous_state == CaseState.NEEDS_VALIDATION
+
+    restarted = CaseService(EvidenceStore(tmp_path), DraftService())
+    restored = restarted.get(case.id)
+    assert restored.state == CaseState.CLOSED
+    assert not restored.monitoring_enabled
+
+    restarted.change_lifecycle(
+        case.id,
+        CaseLifecycleUpdate(
+            action="reopen",
+            operator="MG",
+            reason="Resume the investigation.",
+        ),
+    )
+    assert restored.state == CaseState.NEEDS_VALIDATION
+    assert restarted.history(case.id)[0].action == "reopen"
+    assert restarted.evidence_store.verify_case(case.id) == []
+
+
+def test_manual_rdap_evidence_is_integrity_checked_and_survives_restart(
+    tmp_path,
+) -> None:  # type: ignore[no-untyped-def]
+    service = CaseService(EvidenceStore(tmp_path), DraftService())
+    case = service.create(
+        CaseCreate(
+            target="https://login.example.net/account",
+            brand="Example Brand",
+            legit_url="https://www.example.com/",
+        )
+    )
+
+    event = service.record_manual_rdap_evidence(
+        case.id,
+        content="Registrar: Example Registrar\nAbuse email: abuse@example.test",
+        operator="MG",
+        source_url="https://lookup.icann.org/en/lookup?name=example.net",
+        notes="Copied from the raw RDAP response.",
+    )
+
+    assert event in case.manual_evidence
+    assert service.evidence_store.read_verified_original(
+        case.id, event.artifact_path
+    ).startswith(b"Registrar: Example Registrar")
+    assert service.evidence_store.verify_case(case.id) == []
+
+    restarted = CaseService(EvidenceStore(tmp_path), DraftService())
+    restored = restarted.get(case.id)
+    assert restored.manual_evidence == [event]
+    assert restarted.history(case.id)[0] == event
+    assert restarted.evidence_store.verify_case(case.id) == []
+
+
+def test_manual_rdap_evidence_rejects_unofficial_source(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    service = CaseService(EvidenceStore(tmp_path), DraftService())
+    case = service.create(
+        CaseCreate(
+            target="https://example.net/",
+            brand="Example Brand",
+            legit_url="https://www.example.com/",
+        )
+    )
+
+    with pytest.raises(ManualEvidenceValidationError, match="official ICANN"):
+        service.record_manual_rdap_evidence(
+            case.id,
+            content="synthetic evidence",
+            operator="MG",
+            source_url="https://attacker.example/lookup",
+        )
+
+
 def test_action_events_drive_state_and_survive_restart(tmp_path) -> None:  # type: ignore[no-untyped-def]
     service = CaseService(EvidenceStore(tmp_path), DraftService())
     case = service.create(
@@ -89,7 +199,7 @@ def test_action_events_drive_state_and_survive_restart(tmp_path) -> None:  # typ
             reviewer="MG",
         ),
     )
-    assert case.state == CaseState.COLLECTING
+    assert case.state == CaseState.QUALIFIED
     assert case.actions[0].completed_at is not None
     assert case.criticality_confirmed == case.criticality_proposed
 
@@ -105,7 +215,7 @@ def test_action_events_drive_state_and_survive_restart(tmp_path) -> None:  # typ
     assert restarted.evidence_store.verify_case(case.id) == []
 
     restarted.set_action_completed(case.id, "prepare-registrar", completed=False)
-    assert restored.state == CaseState.COLLECTING
+    assert restored.state == CaseState.QUALIFIED
     assert restarted.history(case.id)[0].completed is False
 
 
@@ -202,3 +312,35 @@ def test_submission_schedules_follow_up_and_survives_restart(tmp_path) -> None: 
     assert restored.submissions[0].external_reference == "TEST-123"
     assert len(restarted.history(case.id)) == 1
     assert restarted.evidence_store.verify_case(case.id) == []
+
+
+def test_scheduled_monitoring_requires_authorization_and_survives_restart(
+    tmp_path,
+) -> None:  # type: ignore[no-untyped-def]
+    service = CaseService(EvidenceStore(tmp_path), DraftService())
+    case = service.create(
+        CaseCreate(
+            target="https://login.example.net/",
+            brand="Example Brand",
+            legit_url="https://www.example.com/",
+        )
+    )
+
+    with pytest.raises(ValueError, match="authorization"):
+        service.configure_monitoring(
+            case.id,
+            MonitoringUpdate(enabled=True, interval_hours=24),
+        )
+    service.configure_monitoring(
+        case.id,
+        MonitoringUpdate(
+            enabled=True,
+            confirmed_authorized=True,
+            interval_hours=12,
+        ),
+    )
+
+    restored = CaseService(EvidenceStore(tmp_path), DraftService()).get(case.id)
+    assert restored.monitoring_enabled is True
+    assert restored.monitoring_interval_hours == 12
+    assert restored.monitoring_authorized_at is not None

@@ -1,0 +1,93 @@
+name: domain-abuse-toolkit
+
+services:
+  app:
+    image: domain-abuse-toolkit-app:0.1.0
+    build:
+      context: .
+      dockerfile: docker/app/Dockerfile
+    environment:
+      DAT_ENVIRONMENT: local-docker
+      DAT_HOST: 0.0.0.0
+      DAT_PORT: 8080
+      DAT_PUBLIC_BASE_URL: http://127.0.0.1:${DAT_HOST_PORT:-8080}
+      DAT_UI_LANGUAGE: ${DAT_UI_LANGUAGE:-en}
+      DAT_DATA_DIR: /data
+      DAT_ENABLE_NETWORK_COLLECTION: "false"
+      DAT_ENABLE_RDAP_COLLECTION: "false"
+      DAT_ENABLE_SCREENSHOTS: "false"
+      DAT_ENABLE_EXTERNAL_APIS: "false"
+      DAT_ENABLE_LLM: "false"
+      DAT_MICROSOFT_GRAPH_ENABLED: "false"
+    volumes:
+      - evidence-data:/data
+    networks:
+      - safe-local
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.0
+    init: true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2).read()"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    stop_grace_period: 10s
+
+  gateway:
+    image: domain-abuse-toolkit-gateway:0.1.0
+    build:
+      context: .
+      dockerfile: docker/gateway/Dockerfile
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - 127.0.0.1:${DAT_HOST_PORT:-8080}:8080
+    networks:
+      - ingress
+      - safe-local
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=8m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.25
+    init: true
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --quiet
+        - --output-document=-
+        - http://127.0.0.1:8080/health
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    stop_grace_period: 10s
+
+networks:
+  ingress: {}
+  safe-local:
+    internal: true
+
+volumes:
+  evidence-data:
+    name: domain-abuse-toolkit-evidence

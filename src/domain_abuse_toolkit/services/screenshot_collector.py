@@ -49,7 +49,7 @@ class ScreenshotCollector:
         runner: WorkerRunner | None = None,
         timeout_seconds: float = 25.0,
         max_input_bytes: int = 256 * 1024,
-        max_render_input_bytes: int = 1024 * 1024,
+        max_render_input_bytes: int = 2 * 1024 * 1024,
         max_output_bytes: int = 10 * 1024 * 1024,
         viewport_width: int = 1440,
         viewport_height: int = 1000,
@@ -94,17 +94,7 @@ class ScreenshotCollector:
                     )
                 ],
             )
-        if source_artifact.metadata.get("truncated"):
-            return self._result(
-                started_at,
-                CollectorStatus.SKIPPED,
-                errors=[
-                    CollectorError(
-                        code="capture_source_truncated",
-                        message="A truncated HTTP response is not rendered as visual evidence.",
-                    )
-                ],
-            )
+        source_was_truncated = bool(source_artifact.metadata.get("truncated"))
         if len(source_artifact.content) > self.max_input_bytes:
             return self._result(
                 started_at,
@@ -194,6 +184,7 @@ class ScreenshotCollector:
                 "viewport_width": _bounded_int(metadata.get("width"), 1, 10000),
                 "captured_height": _bounded_int(metadata.get("height"), 1, 10000),
                 "stylesheets_inlined": stylesheets_inlined,
+                "source_truncated": source_was_truncated,
             },
             classification="derived",
             derived_from=(
@@ -232,16 +223,37 @@ class ScreenshotCollector:
                 name="stylesheets_inlined",
                 value=str(stylesheets_inlined),
             ),
+            CollectorObservation(
+                category="capture",
+                name="source_truncated",
+                value=str(source_was_truncated).lower(),
+            ),
         ]
         title = _safe_text(metadata.get("title"), limit=300)
         if title:
             observations.append(
                 CollectorObservation(category="capture", name="document_title", value=title)
             )
+        errors = []
+        if source_was_truncated:
+            errors.append(
+                CollectorError(
+                    code="capture_from_truncated_source",
+                    message=(
+                        "The offline rendering uses the bounded beginning of a larger "
+                        "HTML response. The image is useful but may omit later content."
+                    ),
+                )
+            )
         return self._result(
             started_at,
-            CollectorStatus.COMPLETE,
+            (
+                CollectorStatus.PARTIAL
+                if source_was_truncated
+                else CollectorStatus.COMPLETE
+            ),
             observations=observations,
+            errors=errors,
             artifacts=[artifact],
         )
 

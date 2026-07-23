@@ -59,7 +59,7 @@ Collectors implement a common result contract:
 
 Each redirect or secondary target passes through the same network policy as the initial target.
 
-The local pilot now executes bounded DNS/HTTP/TLS/RDAP jobs in a small in-process worker pool after an explicit operator action. The web transport connects directly to a validated public IP while preserving Host/SNI and repeats resolution and policy checks for every redirect. RDAP service discovery uses the official IANA bootstrap over validated HTTPS and keeps only operational registration fields in the interface. Raw DNS messages, bounded textual bodies, leaf certificates, RDAP JSON and the final snapshot event are immutable evidence. This executor is intentionally a pilot mechanism; a shared deployment must move jobs to the isolated queue/worker boundary shown above.
+The local pilot now executes bounded DNS/HTTP/TLS/RDAP jobs in a small in-process worker pool after an explicit operator action. A separate per-case authorization can enable the in-process availability scheduler. Scheduled jobs reuse the same public-address and redirect policy but stop after DNS/HTTP/TLS; they never invoke RDAP or the browser worker. The scheduler polls while the application is open, persists its configuration as an immutable event, and starts at most one due job per case. The web transport connects directly to a validated public IP while preserving Host/SNI and repeats resolution and policy checks for every redirect. RDAP service discovery uses the official IANA bootstrap over validated HTTPS and keeps only operational registration fields in the interface. Raw DNS messages, bounded textual bodies, leaf certificates, RDAP JSON and the final snapshot event are immutable evidence. This executor and scheduler are intentionally pilot mechanisms; a shared deployment must move jobs to the isolated queue/worker boundary shown above.
 
 ### Browser worker
 
@@ -98,10 +98,13 @@ Core case processing must continue when every optional adapter is disabled.
 ### Local pilot
 
 - localhost binding;
-- single process for the web layer;
-- local database and evidence directory;
+- Docker Compose safe profile with a fixed loopback reverse proxy and a single process for the web layer;
+- non-root, read-only application container without outbound connectivity;
+- named local Docker volume for case metadata and evidence;
 - network collection disabled unless explicitly enabled;
 - no SSO or shared access.
+
+The first Compose profile is intentionally smaller than the target diagram: it contains the web application plus a minimal fixed reverse proxy. The application cannot access Docker or the Internet; only the proxy bridges the Windows loopback listener to the internal application network. The migration and browser-isolation decision is recorded in [ADR 0001](adr/0001-container-runtime-and-browser-isolation.md). The existing WSL network launcher remains a transitional path for the implemented passive collectors and networkless renderer.
 
 ### Team pilot
 

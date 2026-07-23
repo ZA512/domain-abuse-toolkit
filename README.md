@@ -37,13 +37,34 @@ This foundation currently includes:
 - an explicit passive DNS/HTTP/TLS/RDAP job with validated-IP connections, redirect revalidation, bounded bodies, raw certificates, authoritative registration data and normalized observations;
 - a Docker-isolated offline desktop rendering of bounded HTML and separately collected CSS evidence, with JavaScript and all container networking disabled;
 - automatic normalized diffs between successive snapshots and criticality-based dates for the next operator-triggered technical review;
+- an operator-authorized local availability scheduler that performs bounded DNS/HTTP/TLS checks, displays the latest UP/DOWN signal, and survives application restarts;
+- process-derived next actions and exact due dates using the J+7, J+14/J+15, J+21 and J+30 escalation cadence;
+- a live, background-safe collection progress dialog with per-stage status and operator-friendly complete, limited, and failed outcomes;
+- a guided ICANN Lookup fallback for rate-limited RDAP queries, with operator-pasted results stored as immutable, timestamped and SHA-256-manifested evidence;
 - unit tests for the first safety-critical behaviors.
 
-Passive DNS/HTTP/TLS/RDAP collection and offline static rendering are implemented but remain disabled by default. Review dates are calculated and surfaced locally, but never trigger a network request automatically. Shared database persistence, notification scheduling, Microsoft Graph, and optional LLM integration remain feature-gated until implemented and reviewed.
+Passive DNS/HTTP/TLS/RDAP collection and offline static rendering are implemented but remain disabled by default. In network mode, an operator may separately authorize recurring DNS/HTTP/TLS availability checks for an individual case. The local scheduler runs only while the application is open, catches up overdue checks after restart, and never performs RDAP, screenshots, JavaScript, form submission, or messaging. Shared database persistence, external notifications, Microsoft Graph, and optional LLM integration remain feature-gated until implemented and reviewed.
 
 ## Quick start
 
-### Windows one-click test
+### Windows one-click Docker test
+
+For the simplest safe-mode launch:
+
+1. Start Docker Desktop.
+2. Stop any copy already listening on port 8080.
+3. Double-click `START_TOOLKIT_DOCKER.cmd`.
+4. Stop it with `STOP_TOOLKIT_DOCKER.cmd`.
+
+The first start builds the application image. Cases are stored in the named Docker volume `domain-abuse-toolkit-evidence`, not in the repository or its OneDrive folder. The container binds only to `127.0.0.1` and has no outbound network in this profile. Network collection, screenshots, external APIs, LLMs and message sending are disabled.
+
+Equivalent command-line launch:
+
+```powershell
+docker compose up --detach --build --wait
+```
+
+### Windows WSL test and current passive collection
 
 On the current Windows/WSL development setup:
 
@@ -56,6 +77,24 @@ To test passive technical collection and offline rendering, start Docker Desktop
 Maintainers can deliberately rebuild the capture image after changing its Dockerfile or worker with `PowerShell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-toolkit.ps1 -EnableNetworkCollection -EnableScreenshots -ForceCaptureImageBuild`. A failed build is retried three times to tolerate transient Docker Desktop metadata locks.
 
 The launchers keep the Python environments and private pilot cases under the WSL user profile, outside this public Git repository. See the [local testing guide](docs/testing-guide.md).
+
+The Docker safe-mode launcher is the target local runtime. The WSL network launcher remains temporarily necessary for the implemented passive DNS/HTTP/TLS/RDAP collection and its networkless offline screenshot worker. A future live browser will be a separate, ephemeral Playwright service behind controlled egress; the web container will never receive the Docker socket.
+
+### Interface language
+
+The interface uses English by default. Use the language selector in the page header;
+the choice is stored locally in the browser. A deployment can also choose its initial
+language at startup:
+
+```powershell
+PowerShell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-toolkit.ps1 -UiLanguage fr
+```
+
+Docker Compose reads `DAT_UI_LANGUAGE` (`en` by default). Translation catalogues live
+under `src/domain_abuse_toolkit/resources/i18n/`: copy `en.json`, keep the same keys,
+translate the values, and set `language.self_name`. The web selector discovers the new
+locale automatically. Missing keys fall back to English; an absent or invalid startup
+catalogue stops startup with an explicit error.
 
 ### Manual Python setup
 
@@ -104,6 +143,7 @@ Read [the security and evidence model](docs/security-and-evidence.md) before ena
 - [Product requirements v0.2](docs/PRD_v0.2.md)
 - [Operator journey](docs/operator-journey.md)
 - [Architecture](docs/architecture.md)
+- [ADR 0001: container runtime and browser isolation](docs/adr/0001-container-runtime-and-browser-isolation.md)
 - [Data model](docs/data-model.md)
 - [Security and evidence](docs/security-and-evidence.md)
 - [MVP backlog](docs/mvp-backlog.md)

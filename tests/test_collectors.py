@@ -302,6 +302,34 @@ def test_collection_job_persists_snapshot_and_survives_restart(tmp_path) -> None
     assert len(restarted.history(case.id)) == 1
 
 
+def test_scheduled_monitor_collects_only_dns_http_and_tls(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    service = CaseService(EvidenceStore(tmp_path), DraftService())
+    case = service.create(
+        CaseCreate(
+            target="https://login.example.net/",
+            brand="Example Brand",
+            legit_url="https://www.example.com/",
+        )
+    )
+    jobs = CollectionJobService(
+        service,
+        SuccessfulCollector(),
+        SuccessfulWebCollector(),
+        SuccessfulRdapCollector(),
+        SuccessfulScreenshotCollector(),
+    )
+
+    finished = jobs.wait(jobs.start_monitor(case.id).id)
+
+    assert finished.trigger == "scheduled"
+    assert case.snapshots[-1].trigger == "scheduled"
+    assert {result.collector for result in case.snapshots[-1].results} == {
+        "dns",
+        "http",
+        "tls",
+    }
+
+
 def test_collection_job_records_diff_and_next_manual_review(tmp_path) -> None:  # type: ignore[no-untyped-def]
     service = CaseService(EvidenceStore(tmp_path), DraftService())
     case = service.create(
@@ -324,7 +352,7 @@ def test_collection_job_records_diff_and_next_manual_review(tmp_path) -> None:  
     assert latest.changes[0].record_type == "A"
     assert latest.changes[0].before == ["8.8.8.8"]
     assert latest.changes[0].after == ["1.1.1.1"]
-    assert latest.next_check_due_at == latest.finished_at + timedelta(hours=72)
+    assert latest.next_check_due_at == latest.finished_at + timedelta(hours=168)
 
     restarted = CaseService(EvidenceStore(tmp_path), DraftService())
     restored = restarted.get(case.id).snapshots[-1]
@@ -352,6 +380,9 @@ def test_collection_queue_has_a_global_pending_limit(tmp_path) -> None:  # type:
 
     first = jobs.start_dns(cases[0].id)
     assert collector.started.wait(timeout=2)
+    running = jobs.get(first.id)
+    assert running.current_stage == "dns"
+    assert running.planned_stages == ["dns", "persisting"]
     with pytest.raises(CollectionQueueFullError, match="queue"):
         jobs.start_dns(cases[1].id)
 
@@ -380,6 +411,14 @@ def test_full_passive_job_combines_all_enabled_collectors(tmp_path) -> None:  # 
     finished = jobs.wait(queued.id)
 
     assert finished.status == CollectorStatus.COMPLETE
+    assert finished.current_stage == "done"
+    assert finished.completed_stages == [
+        "dns",
+        "http_tls",
+        "rdap",
+        "screenshot",
+        "persisting",
+    ]
     assert [result.collector for result in case.snapshots[0].results] == [
         "dns",
         "http",

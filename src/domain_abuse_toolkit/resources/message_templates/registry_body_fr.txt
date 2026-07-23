@@ -1,0 +1,14 @@
+Bonjour,
+
+Nous signalons un abus suspecté concernant le domaine {{ tld }} {{ domain }} et l’URL exacte {{ url }}.
+
+La page semble usurper la marque {{ brand }} associée au site légitime {{ legit_url }}. La qualification actuelle est : {{ suspicion_type }}. Référence interne : {{ case_id }}.
+
+Un dossier de preuves dont l’intégrité est contrôlée est disponible. Il comprend l’URL exacte, l’heure de collecte UTC et les observations DNS, HTTP, TLS, d’enregistrement et de capture disponibles. Tous les faits doivent être validés par une personne autorisée avant l’envoi de ce message.
+
+Merci d’examiner ce domaine au titre de votre politique de lutte contre les abus, de prendre les mesures appropriées si l’abus est confirmé et de nous communiquer un accusé de réception ainsi qu’une référence.
+
+Cordialement,
+[NOM]
+[FONCTION]
+[SOCIÉTÉ]

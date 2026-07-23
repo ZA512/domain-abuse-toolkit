@@ -12,9 +12,14 @@ from domain_abuse_toolkit.models import (
     ActionEvent,
     CapabilityStatus,
     CaseCreate,
+    CaseLifecycleEvent,
+    CaseLifecycleUpdate,
     CaseRecord,
     CaseState,
     Criticality,
+    ManualEvidenceEvent,
+    MonitoringEvent,
+    MonitoringUpdate,
     QualificationEvent,
     QualificationSubmission,
     SnapshotEvent,
@@ -48,6 +53,32 @@ class SubmissionValidationError(ValueError):
     pass
 
 
+class ManualEvidenceValidationError(ValueError):
+    pass
+
+
+class CaseLifecycleValidationError(ValueError):
+    pass
+
+
+CaseEvent = (
+    ActionEvent
+    | QualificationEvent
+    | SubmissionEvent
+    | ManualEvidenceEvent
+    | MonitoringEvent
+    | CaseLifecycleEvent
+    | SnapshotEvent
+)
+
+_TERMINAL_STATES = {
+    CaseState.CLOSED,
+    CaseState.MITIGATED,
+    CaseState.FALSE_POSITIVE,
+    CaseState.TRANSFERRED,
+}
+
+
 class CaseService:
     """Local case service backed by integrity-checked records in the evidence store."""
 
@@ -55,9 +86,7 @@ class CaseService:
         self.evidence_store = evidence_store
         self.drafts = drafts
         self._cases: dict[str, CaseRecord] = {}
-        self._events: dict[
-            str, list[ActionEvent | QualificationEvent | SubmissionEvent | SnapshotEvent]
-        ] = {}
+        self._events: dict[str, list[CaseEvent]] = {}
         self._lock = threading.Lock()
         self.load_warnings: list[str] = []
         self._load_existing_cases()
@@ -82,9 +111,7 @@ class CaseService:
             ) as exc:
                 self.load_warnings.append(f"{case_id}: {exc}")
                 continue
-            events: list[
-                ActionEvent | QualificationEvent | SubmissionEvent | SnapshotEvent
-            ] = []
+            events: list[CaseEvent] = []
             try:
                 event_paths = self.evidence_store.list_original_paths(
                     case_id, "00_case/events"
@@ -103,16 +130,17 @@ class CaseService:
                     if not isinstance(raw_event, dict):
                         raise ValueError("invalid event payload")
                     if raw_event.get("event_type") == "action_status_changed":
-                        event: (
-                            ActionEvent
-                            | QualificationEvent
-                            | SubmissionEvent
-                            | SnapshotEvent
-                        ) = ActionEvent.model_validate(raw_event)
+                        event: CaseEvent = ActionEvent.model_validate(raw_event)
                     elif raw_event.get("event_type") == "qualification_recorded":
                         event = QualificationEvent.model_validate(raw_event)
                     elif raw_event.get("event_type") == "report_submission_recorded":
                         event = SubmissionEvent.model_validate(raw_event)
+                    elif raw_event.get("event_type") == "manual_evidence_recorded":
+                        event = ManualEvidenceEvent.model_validate(raw_event)
+                    elif raw_event.get("event_type") == "monitoring_configured":
+                        event = MonitoringEvent.model_validate(raw_event)
+                    elif raw_event.get("event_type") == "case_lifecycle_changed":
+                        event = CaseLifecycleEvent.model_validate(raw_event)
                     elif raw_event.get("event_type") == "snapshot_recorded":
                         event = SnapshotEvent.model_validate(raw_event)
                     else:
@@ -125,6 +153,12 @@ class CaseService:
                         self._apply_qualification_event(record, event)
                     elif isinstance(event, SubmissionEvent):
                         self._apply_submission_event(record, event)
+                    elif isinstance(event, ManualEvidenceEvent):
+                        self._apply_manual_evidence_event(record, event)
+                    elif isinstance(event, MonitoringEvent):
+                        self._apply_monitoring_event(record, event)
+                    elif isinstance(event, CaseLifecycleEvent):
+                        self._apply_lifecycle_event(record, event)
                     else:
                         self._apply_snapshot_event(record, event)
                 except (
@@ -152,10 +186,10 @@ class CaseService:
             follow_up = 24
         elif intake.campaign:
             criticality = Criticality.CAMPAIGN
-            follow_up = 72
+            follow_up = 24
         elif intake.urgency == Urgency.HIGH:
             criticality = Criticality.HIGH
-            follow_up = 72
+            follow_up = 168
         else:
             criticality = Criticality.HIGH
             follow_up = 168
@@ -254,6 +288,8 @@ class CaseService:
 
     @staticmethod
     def _refresh_state(record: CaseRecord) -> None:
+        if record.state in _TERMINAL_STATES:
+            return
         if record.submissions:
             record.state = CaseState.WAITING_EXTERNAL
             return
@@ -269,8 +305,8 @@ class CaseService:
             and all(item.completed_at for item in required_actions)
         ):
             record.state = CaseState.READY_TO_REPORT
-        elif any(item.completed_at for item in record.actions):
-            record.state = CaseState.COLLECTING
+        elif record.criticality_confirmed is not None:
+            record.state = CaseState.QUALIFIED
         else:
             record.state = CaseState.NEEDS_VALIDATION
 
@@ -324,7 +360,7 @@ class CaseService:
         action_code = None
         if event.channel_category in {"user_protection", "authority_report"}:
             action_code = "prepare-user-protection"
-        elif event.channel_category == "registrar_report":
+        elif event.channel_category in {"registrar_report", "registry_report"}:
             action_code = "prepare-registrar"
         if action_code:
             action = next(
@@ -361,8 +397,8 @@ class CaseService:
             criticality = record.criticality_confirmed or record.criticality_proposed
             follow_up_hours = {
                 Criticality.CRITICAL: 24,
-                Criticality.HIGH: 72,
-                Criticality.CAMPAIGN: 72,
+                Criticality.HIGH: 168,
+                Criticality.CAMPAIGN: 24,
                 Criticality.LOW: 168,
             }[criticality]
             event = SubmissionEvent(
@@ -395,6 +431,209 @@ class CaseService:
             self._apply_submission_event(record, event)
             self._events.setdefault(case_id, []).append(event)
             return record
+
+    @staticmethod
+    def _apply_monitoring_event(record: CaseRecord, event: MonitoringEvent) -> None:
+        record.monitoring_enabled = event.enabled
+        record.monitoring_interval_hours = event.interval_hours
+        record.monitoring_authorized_at = event.occurred_at if event.enabled else None
+        record.updated_at = max(record.updated_at, event.occurred_at)
+
+    def configure_monitoring(
+        self, case_id: str, update: MonitoringUpdate
+    ) -> CaseRecord:
+        if update.enabled and not update.confirmed_authorized:
+            raise ValueError(
+                "Confirm continuing authorization before enabling scheduled checks."
+            )
+        with self._lock:
+            try:
+                record = self._cases[case_id]
+            except KeyError as exc:
+                raise CaseNotFoundError(case_id) from exc
+            now = datetime.now(UTC)
+            event = MonitoringEvent(
+                id=f"EVT-{uuid.uuid4().hex.upper()}",
+                case_id=case_id,
+                enabled=update.enabled,
+                interval_hours=update.interval_hours,
+                occurred_at=now,
+            )
+            payload = {
+                "schema_version": "1.0",
+                "event": event.model_dump(mode="json"),
+                "notice": (
+                    "Immutable operator decision authorizing or disabling bounded "
+                    "scheduled DNS/HTTP/TLS checks."
+                ),
+            }
+            event_path = (
+                f"00_case/events/{now:%Y%m%dT%H%M%S.%fZ}-{event.id}.json"
+            )
+            self.evidence_store.write_original(
+                case_id,
+                event_path,
+                (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode(),
+                media_type="application/json",
+                source="operator monitoring configuration",
+            )
+            self._apply_monitoring_event(record, event)
+            self._events.setdefault(case_id, []).append(event)
+            return record
+
+    @staticmethod
+    def _apply_lifecycle_event(
+        record: CaseRecord, event: CaseLifecycleEvent
+    ) -> None:
+        record.state = event.new_state
+        if event.new_state in _TERMINAL_STATES:
+            record.monitoring_enabled = False
+            record.monitoring_authorized_at = None
+        record.updated_at = max(record.updated_at, event.occurred_at)
+
+    def change_lifecycle(
+        self, case_id: str, update: CaseLifecycleUpdate
+    ) -> CaseRecord:
+        with self._lock:
+            try:
+                record = self._cases[case_id]
+            except KeyError as exc:
+                raise CaseNotFoundError(case_id) from exc
+
+            if update.action == "close":
+                resolution = update.resolution or CaseState.CLOSED
+                if resolution not in _TERMINAL_STATES:
+                    raise CaseLifecycleValidationError(
+                        "The selected resolution is not a closing state."
+                    )
+                if record.state in _TERMINAL_STATES:
+                    raise CaseLifecycleValidationError("The case is already closed.")
+                new_state = resolution
+            else:
+                if record.state not in _TERMINAL_STATES:
+                    raise CaseLifecycleValidationError("The case is already active.")
+                candidate = record.model_copy(deep=True)
+                candidate.state = CaseState.NEW
+                self._refresh_state(candidate)
+                new_state = candidate.state
+
+            now = datetime.now(UTC)
+            event = CaseLifecycleEvent(
+                id=f"EVT-{uuid.uuid4().hex.upper()}",
+                case_id=case_id,
+                action=update.action,
+                previous_state=record.state,
+                new_state=new_state,
+                operator=update.operator,
+                reason=update.reason,
+                occurred_at=now,
+            )
+            payload = {
+                "schema_version": "1.0",
+                "event": event.model_dump(mode="json"),
+                "notice": "Immutable operator-confirmed case lifecycle event.",
+            }
+            event_path = (
+                f"00_case/events/{now:%Y%m%dT%H%M%S.%fZ}-{event.id}.json"
+            )
+            self.evidence_store.write_original(
+                case_id,
+                event_path,
+                (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode(),
+                media_type="application/json",
+                source="operator-confirmed case lifecycle decision",
+            )
+            self._apply_lifecycle_event(record, event)
+            self._events.setdefault(case_id, []).append(event)
+            return record
+
+    @staticmethod
+    def _apply_manual_evidence_event(
+        record: CaseRecord, event: ManualEvidenceEvent
+    ) -> None:
+        if not any(existing.id == event.id for existing in record.manual_evidence):
+            record.manual_evidence.append(event)
+        record.updated_at = max(record.updated_at, event.occurred_at)
+
+    def record_manual_rdap_evidence(
+        self,
+        case_id: str,
+        *,
+        content: str,
+        operator: str,
+        source_url: str,
+        notes: str | None = None,
+    ) -> ManualEvidenceEvent:
+        normalized_content = content.strip()
+        normalized_operator = operator.strip()
+        normalized_notes = notes.strip() if notes else None
+        if not normalized_content:
+            raise ManualEvidenceValidationError("Manual evidence must not be empty.")
+        if len(normalized_content.encode("utf-8")) > 512 * 1024:
+            raise ManualEvidenceValidationError(
+                "Manual evidence exceeds the 512 KiB safety limit."
+            )
+        if not normalized_operator:
+            raise ManualEvidenceValidationError("Operator initials are required.")
+        if any(ord(character) < 32 or ord(character) == 127 for character in normalized_operator):
+            raise ManualEvidenceValidationError(
+                "Operator initials must not contain control characters."
+            )
+        if len(normalized_operator) > 80:
+            raise ManualEvidenceValidationError("Operator initials are too long.")
+        if normalized_notes and len(normalized_notes) > 1000:
+            raise ManualEvidenceValidationError("Manual evidence notes are too long.")
+        if not source_url.startswith("https://lookup.icann.org/"):
+            raise ManualEvidenceValidationError(
+                "The manual RDAP source must be the official ICANN Lookup service."
+            )
+
+        with self._lock:
+            try:
+                record = self._cases[case_id]
+            except KeyError as exc:
+                raise CaseNotFoundError(case_id) from exc
+            now = datetime.now(UTC)
+            event_id = f"EVT-{uuid.uuid4().hex.upper()}"
+            artifact_path = f"20_manual/{event_id}/rdap.txt"
+            event = ManualEvidenceEvent(
+                id=event_id,
+                case_id=case_id,
+                source_url=source_url,
+                artifact_path=artifact_path,
+                operator=normalized_operator,
+                notes=normalized_notes,
+                occurred_at=now,
+            )
+            self.evidence_store.write_original(
+                case_id,
+                artifact_path,
+                (normalized_content + "\n").encode("utf-8"),
+                media_type="text/plain; charset=utf-8",
+                source="operator-copied ICANN Lookup result",
+                metadata={
+                    "evidence_type": "rdap",
+                    "source_url": source_url,
+                    "operator": normalized_operator,
+                    "captured_at": now.isoformat(),
+                },
+            )
+            payload = {
+                "schema_version": "1.0",
+                "event": event.model_dump(mode="json"),
+                "notice": "Immutable operator-supplied evidence event.",
+            }
+            event_path = f"00_case/events/{now:%Y%m%dT%H%M%S.%fZ}-{event.id}.json"
+            self.evidence_store.write_original(
+                case_id,
+                event_path,
+                (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode(),
+                media_type="application/json",
+                source="operator-supplied evidence record",
+            )
+            self._apply_manual_evidence_event(record, event)
+            self._events.setdefault(case_id, []).append(event)
+            return event
 
     @staticmethod
     def _apply_snapshot_event(record: CaseRecord, event: SnapshotEvent) -> None:
@@ -504,9 +743,7 @@ class CaseService:
             self._events.setdefault(case_id, []).append(event)
             return record
 
-    def history(
-        self, case_id: str
-    ) -> list[ActionEvent | QualificationEvent | SubmissionEvent | SnapshotEvent]:
+    def history(self, case_id: str) -> list[CaseEvent]:
         if case_id not in self._cases:
             raise CaseNotFoundError(case_id)
         return list(reversed(self._events.get(case_id, [])))

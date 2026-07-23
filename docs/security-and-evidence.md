@@ -34,6 +34,12 @@ Shared deployment must additionally use egress firewall rules that prevent acces
 
 The local pilot keeps network collection disabled unless started with the dedicated opt-in launcher. A separate case-page confirmation starts a bounded job for `A`, `AAAA`, `CNAME`, `MX`, `NS`, and `TXT` records. Per-query timeout, total query lifetime, record count, worker concurrency, one-running-job-per-case, and the global pending queue are bounded. Any private, loopback, link-local, reserved, multicast, or otherwise non-global address makes the snapshot fail and blocks its use by later connection-based collectors. Error messages do not repeat the prohibited address.
 
+Recurring availability checks require a separate case-level continuous-authorization
+confirmation. They reuse the bounded DNS/HTTP/TLS collectors and the same target policy,
+but exclude RDAP and screenshot rendering. The local scheduler runs only while the
+application process is active and does not send messages or submit forms. Disabling the
+case setting prevents future scheduled jobs; existing immutable evidence is retained.
+
 Successful DNS response messages are preserved as `application/dns-message` originals below `10_snapshots/<snapshot-id>/dns/`. The normalized snapshot and its failure details are stored as an immutable event. DNS collection does not imply that the website was opened or that its content was reviewed.
 
 ### Current HTTP/TLS implementation
@@ -47,6 +53,8 @@ The request sends no cookie, authorization value or browser state, asks for iden
 The collector derives the registrable domain from the normalized case target, downloads the official IANA DNS bootstrap registry over certificate-validated HTTPS, and selects the HTTPS service published for the target TLD. The bootstrap and authoritative domain response are size-bounded, parsed as JSON only, cached for a bounded period, and preserved as immutable evidence. Every bootstrap or registry address and every redirect must resolve exclusively to public IP addresses; HTTPS certificate validation remains enabled for these trusted service endpoints.
 
 Only operational registration fields are normalized for the interface: domain identifiers, statuses, events, nameservers, DNSSEC state, registrar identifiers/name, and an abuse email explicitly published by an entity with the `abuse` role. Registrant contact data is not normalized or displayed. The raw authoritative response may nevertheless contain personal data published by a registry, so case access, retention, and evidence exports must remain restricted and proportionate.
+
+An authoritative RDAP service may temporarily rate-limit automated queries. When that happens, the operator interface links to ICANN Lookup for a human query and explains how to copy the relevant displayed result or its raw RDAP response. Pasted results are bounded to 512 KiB, accepted only with the fixed official ICANN Lookup source, stored as immutable originals, and registered in the case manifest with source URL, operator, UTC timestamp, and SHA-256 digest. The UI reminds operators to retain only necessary and authorized public data.
 
 ## Browser isolation
 

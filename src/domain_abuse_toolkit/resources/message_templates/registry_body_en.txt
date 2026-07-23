@@ -1,0 +1,14 @@
+Dear {{ registry_name }} Abuse Team,
+
+We are reporting suspected abuse involving the {{ tld }} domain {{ domain }} and the exact URL {{ url }}.
+
+The page appears to impersonate the {{ brand }} brand associated with {{ legit_url }}. The current classification is {{ suspicion_type }}. Internal reference: {{ case_id }}.
+
+An integrity-checked evidence package is available, including the exact URL, UTC collection time and available DNS, HTTP, TLS, registration and screenshot observations. All facts must be validated by an authorized reviewer before this message is sent.
+
+Please investigate this domain under your abuse policy, take appropriate action if the abuse is confirmed, and provide an acknowledgement and reference number.
+
+Kind regards,
+[SENDER NAME]
+[ROLE]
+[COMPANY]

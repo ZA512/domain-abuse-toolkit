@@ -8,7 +8,21 @@ The interface should answer three questions without forcing the operator to reco
 2. What must a human validate?
 3. What is the next action, and when is it due?
 
-## Screen 1 — New case
+## Screen 1 — Operational work queue
+
+The default landing page prioritizes recurring work over creation. It groups active cases into:
+
+- attention required now;
+- waiting for an external event;
+- other active work.
+
+Rows lead with the current action and due date, supported by case state, criticality and last
+availability. Search covers brand, domain, case identifier and exact URL. Closed cases remain in
+a collapsed archive.
+
+Creating a case is an occasional secondary action disclosed from this screen.
+
+## Screen 2 — New case
 
 Required fields:
 
@@ -19,7 +33,7 @@ Optional fields are collapsed: detection source, campaign, urgency, and notes.
 
 The primary button is **Create case and collect evidence**. Before execution, the page states which capabilities are enabled and that no email or form will be submitted.
 
-## Screen 2 — Collection progress
+## Screen 3 — Collection progress
 
 Case creation is immediate. Collector cards update independently:
 
@@ -34,7 +48,7 @@ Case creation is immediate. Collector cards update independently:
 
 Each card reports `queued`, `running`, `complete`, `partial`, `failed`, or `skipped`. A failed optional collector does not fail the case.
 
-## Screen 3 — Validation desk
+## Screen 4 — Validation desk
 
 The operator sees the screenshot and concise observations before raw data.
 
@@ -48,9 +62,11 @@ The mandatory checklist asks only questions that require judgment:
 
 The application displays its proposed criticality and the exact contributing rules. The operator confirms or overrides it with a reason.
 
-## Screen 4 — Action cockpit
+## Screen 5 — Reporting priorities
 
-Actions are ordered by due date and risk, not by technical actor.
+Reporting actions are ordered by operational importance: registrar first, user-protection
+services second, TLD registry third, and ICANN contractual escalation last. Contextual
+authority channels remain available separately.
 
 Each card contains:
 
@@ -69,7 +85,7 @@ Possible examples:
 - request internal legal review;
 - schedule a new check.
 
-## Screen 5 — Draft workspace
+## Screen 6 — Draft workspace
 
 The draft workspace shows:
 
@@ -91,7 +107,7 @@ Primary actions:
 
 There is no **Send** button in the MVP.
 
-## Screen 6 — Record submission
+## Screen 7 — Record submission
 
 After the operator completes the external action, the application asks for:
 
@@ -106,7 +122,26 @@ Recording completion schedules the next action according to the active workflow 
 
 The local pilot implements the channel, destination, reference, notes, immutable event, and follow-up date. Proof attachments and operator identity are reserved for the authenticated shared deployment.
 
-## Screen 7 — Follow-up review
+## Screen 8 — Follow-up review
+
+The page leads with the latest bounded HTTP availability signal and the exact next
+process action. `UP` means an HTTP response was received; it does not prove that the
+fraudulent content is still present. `Probably DOWN` means the HTTP connection failed
+and must be confirmed by a human.
+
+The standard high-severity cadence is:
+
+- initial registrar report at J0/J1;
+- first registrar reminder at J+7 if the site remains active;
+- strengthened reminder and escalation preparation at J+14/J+15;
+- TLD registry escalation at J+15/J+21;
+- ICANN, authority, or legal escalation at J+21/J+30;
+- closure or transfer at J+30.
+
+The operator can separately authorize recurring DNS/HTTP/TLS checks for the case.
+The local scheduler runs while the application is open, preserves its configuration,
+and catches up an overdue check after restart. It does not run RDAP, screenshots,
+JavaScript, forms, or external messages.
 
 At the due date, the application launches or offers a new snapshot. The page leads with changes:
 
@@ -118,7 +153,12 @@ At the due date, the application launches or offers a new snapshot. The page lea
 
 The operator can prepare a reminder, escalate, mark mitigated, transfer, or close.
 
-## Screen 8 — Campaign view
+Case management is secondary to the current task but always reachable from the case header.
+Closing requires a resolution, operator and reason, keeps all evidence available, removes the
+case from the active queue and disables scheduled monitoring. Reopening is audited and requires
+new monitoring authorization.
+
+## Screen 9 — Campaign view
 
 The campaign view presents:
 

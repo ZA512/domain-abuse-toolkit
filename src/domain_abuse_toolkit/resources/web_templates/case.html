@@ -1,390 +1,578 @@
 {% extends "base.html" %}
+{% macro channel_card(item) %}
+  <article class="channel-card{% if item.recommended %} channel-recommended{% endif %}">
+    <div class="channel-card-heading"><span class="badge">{{ item.category_label }}</span>{% if item.recommended %}<span class="badge badge-safe">{{ t("case.reporting.recommended") }}</span>{% endif %}</div>
+    <h3>{{ item.channel.name }}</h3>
+    <p>{{ item.purpose }}</p>
+    <p class="channel-reason">{{ item.recommendation_reason }}</p>
+    <details><summary>{{ t("case.reporting.required") }}</summary><ul class="compact-list">{% for field in item.required_fields %}<li>{{ field }}</li>{% endfor %}</ul><p>{{ item.notes }}</p></details>
+    <div class="channel-card-footer"><small>{{ t("case.reporting.verified", date=item.channel.verified_on) }}</small><a class="button button-primary" href="{{ item.action_url }}" target="_blank" rel="noopener noreferrer">{{ t("case.reporting.open") }}</a></div>
+  </article>
+{% endmacro %}
 {% block title %}{{ case.id }} — Domain Abuse Toolkit{% endblock %}
 {% block content %}
-  <nav class="breadcrumb"><a href="/">New case</a><span>/</span><span>{{ case.id }}</span></nav>
+  <nav class="breadcrumb"><a href="/">{{ t("case.cases") }}</a><span>/</span><span>{{ case.id }}</span></nav>
 
-  {% if pilot_notice %}
-    <div class="alert alert-neutral">Local pilot: this case is persisted and integrity-checked. A network collector runs only after explicit authorization from the collection panel.</div>
-  {% endif %}
-
-  <section class="case-header">
-    <div>
+  <header class="case-command-bar">
+    <div class="case-identity">
       <p class="eyebrow">{{ case.id }}</p>
       <h1>{{ case.target.registrable_domain }}</h1>
-      <p class="lead break-anywhere">{{ case.target.normalized_url }}</p>
+      <p class="case-url break-anywhere">{{ case.target.normalized_url }}</p>
     </div>
-    <div class="header-status">
-      <span class="badge badge-high">Proposed: {{ case.criticality_proposed }}</span>
-      {% if case.criticality_confirmed %}<span class="badge badge-safe">Confirmed: {{ case.criticality_confirmed }}</span>{% endif %}
-      <span class="badge">{{ case.state }}</span>
-      {% if technical_review %}<span class="badge {{ 'badge-high' if technical_review.overdue else 'badge-safe' }}">Technical check {{ 'due' if technical_review.overdue else 'scheduled' }}</span>{% endif %}
-    </div>
-  </section>
-
-  <section class="stats-grid">
-    <div class="stat"><span>Brand</span><strong>{{ case.brand }}</strong></div>
-    <div class="stat"><span>Suspicion</span><strong>{{ case.suspicion_type }}</strong></div>
-    <div class="stat"><span>Exact path</span><strong class="break-anywhere">{{ case.target.path }}</strong></div>
-    <div class="stat"><span>Created UTC</span><strong>{{ case.created_at.strftime('%Y-%m-%d %H:%M') }}</strong></div>
-  </section>
-
-  <section class="panel evidence-export">
-    <div>
-      <p class="eyebrow">Evidence package</p>
-      <h2>Download a verifiable case archive</h2>
-      <p>The ZIP contains {{ artifact_count }} registered artifact{{ "s" if artifact_count != 1 else "" }}, the exact manifest and an offline verification script. Unregistered local files are excluded.</p>
-      {% if integrity_errors %}
-        <div class="alert" role="alert">Export blocked: {{ integrity_errors|join('; ') }}</div>
-      {% else %}
-        <span class="badge badge-safe">Integrity verified</span>
+    <div class="case-command-actions">
+      <div class="header-status" aria-label="{{ t('case.status') }}">
+        <span class="badge badge-high">{{ t("case.criticality", level=t("criticality." ~ (case.criticality_confirmed or case.criticality_proposed).value)) }}</span>
+        <span class="badge">{{ t("state." ~ case.state.value) }}</span>
+      </div>
+      {% if not integrity_errors %}
+        <a class="button" href="/cases/{{ case.id }}/evidence.zip">{{ t("case.export") }}</a>
       {% endif %}
+      <a class="button button-quiet" href="#case-management">{{ t("case.manage") }}</a>
     </div>
-    {% if not integrity_errors %}
-      <a class="button button-primary" href="/cases/{{ case.id }}/evidence.zip">Download evidence ZIP</a>
-    {% endif %}
+  </header>
+
+  {% if pilot_notice %}
+    <p class="pilot-notice">{{ t("case.pilot") }}</p>
+  {% endif %}
+
+  <section class="next-action-card" aria-labelledby="next-action-title">
+    <div class="next-action-icon" aria-hidden="true">→</div>
+    <div>
+      <p class="eyebrow">{{ t("case.next") }}</p>
+      <h2 id="next-action-title">{{ workflow.next_action_title }}</h2>
+      <p>{{ workflow.next_action_detail }}</p>
+    </div>
+    <a class="button button-primary" href="{{ workflow.next_action_href }}" data-workflow-link>{{ workflow.next_action_label }}</a>
   </section>
 
-  {% set q = case.qualification %}
-  <section id="qualification" class="panel qualification-panel">
-    <div class="section-heading">
-      <div>
-        <p class="eyebrow">Human validation desk</p>
-        <h2>Qualify the observed risk</h2>
-      </div>
-      <span class="badge {{ 'badge-safe' if q else '' }}">{{ "Reviewed" if q else "Required" }}</span>
-    </div>
-    <p class="lead qualification-intro">Record only observations that a human has verified. Saving a revision confirms the criticality and completes the validation action.</p>
-    {% if qualification_error %}<div class="alert" role="alert">{{ qualification_error }}</div>{% endif %}
+  <div class="workflow-layout" data-workflow-root data-default-step="{{ workflow.current_step_id }}">
+    <nav class="workflow-rail" aria-label="{{ t('case.steps') }}">
+      <p class="workflow-rail-title">{{ t("case.progress") }}</p>
+      {% for step in workflow.steps %}
+        <a class="workflow-step workflow-state-{{ step.state }}{% if step.current %} active{% endif %}"
+           href="{{ step.href }}"
+           data-workflow-step="{{ step.id }}"
+           {% if step.current %}aria-current="step"{% endif %}>
+          <span class="workflow-marker" aria-hidden="true">{{ "✓" if step.state in ["complete", "limited"] else loop.index }}</span>
+          <span class="workflow-step-copy">
+            <strong>{{ step.label }}</strong>
+            <small>{{ step.state_label }}</small>
+            <span>{{ step.summary }}</span>
+          </span>
+        </a>
+      {% endfor %}
+      <a class="workflow-utility-link" href="#case-details">{{ t("case.technical_details") }}</a>
+    </nav>
 
-    <form action="/cases/{{ case.id }}/qualification" method="post" class="qualification-form">
-      <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
-      <fieldset class="decision-list">
-        <legend>Review checklist</legend>
-        <label class="decision"><input type="checkbox" name="brand_represented"{% if q and q.brand_represented %} checked{% endif %}><span><strong>Selected brand is represented</strong><small>Logo, name, identity or an unambiguous reference.</small></span></label>
-        <label class="decision"><input type="checkbox" name="copied_elements"{% if q and q.copied_elements %} checked{% endif %}><span><strong>Copied products, text or visuals are visible</strong><small>Content appears to reproduce legitimate material.</small></span></label>
-        <label class="decision"><input type="checkbox" name="sensitive_input_or_payment"{% if q and q.sensitive_input_or_payment %} checked{% endif %}><span><strong>Login, personal-data or payment path is offered</strong><small>The page solicits credentials, personal information or a transaction.</small></span></label>
-        <label class="decision"><input type="checkbox" name="victims_or_transactions"{% if q and q.victims_or_transactions %} checked{% endif %}><span><strong>Victims or fraudulent transactions are known</strong><small>Confirmed reports exist beyond the suspicious page itself.</small></span></label>
-        <label class="decision"><input type="checkbox" name="related_case_or_campaign"{% if q and q.related_case_or_campaign %} checked{% endif %}><span><strong>Related case, domain or campaign is known</strong><small>A recurrence or confirmed relationship has been identified.</small></span></label>
-        <label class="decision decision-factual"><input type="checkbox" name="publicly_available"{% if q and q.publicly_available %} checked{% endif %}><span><strong>Target is publicly available at review time</strong><small>This is a time-bound observation, not an automatic network check.</small></span></label>
-      </fieldset>
+    <div class="workflow-content">
+      <section id="overview" class="panel workflow-panel" data-workflow-panel="overview" tabindex="-1">
+        <div class="section-heading">
+          <div><p class="eyebrow">{{ t("case.step", number=1) }}</p><h2>{{ t("case.overview.title") }}</h2></div>
+          <span class="badge badge-safe">{{ t("case.complete") }}</span>
+        </div>
+        <div class="stats-grid case-facts">
+          <div class="stat"><span>{{ t("case.brand") }}</span><strong>{{ case.brand }}</strong></div>
+          <div class="stat"><span>{{ t("case.suspicion") }}</span><strong>{{ t("suspicion." ~ case.suspicion_type|replace(' ', '_'), default=case.suspicion_type) }}</strong></div>
+          <div class="stat"><span>{{ t("case.legit") }}</span><strong class="break-anywhere">{{ case.legit_url }}</strong></div>
+          <div class="stat"><span>{{ t("case.created") }}</span><strong>{{ case.created_at.strftime('%Y-%m-%d %H:%M') }} UTC</strong></div>
+        </div>
+        <div class="integrity-summary {{ 'integrity-error' if integrity_errors else '' }}">
+          <div>
+            <strong>{{ t("case.export_blocked") if integrity_errors else t("case.integrity_ok") }}</strong>
+            <span>{{ t("case.artifacts", count=artifact_count) }}</span>
+          </div>
+          {% if integrity_errors %}<p class="alert" role="alert">{{ integrity_errors|join('; ') }}</p>{% endif %}
+        </div>
+      </section>
 
-      <div class="grid-two">
-        <label>
-          Confirmed criticality
-          <select name="confirmed_criticality" required>
-            {% for criticality in criticalities %}
-              <option value="{{ criticality }}"{% if (q and q.confirmed_criticality == criticality) or (not q and case.criticality_proposed == criticality) %} selected{% endif %}>{{ criticality|upper }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <label>
-          Reviewer / initials
-          <input name="reviewer" required maxlength="80" value="{{ q.reviewer if q else '' }}" placeholder="e.g. MG">
-        </label>
-      </div>
-      <label>
-        Override reason
-        <textarea name="override_reason" rows="3" maxlength="1000" placeholder="Required only when confirmed criticality differs from the proposal">{{ q.override_reason if q and q.override_reason else '' }}</textarea>
-      </label>
-      <div class="qualification-footer">
-        {% if q %}<small>Latest review: {{ q.occurred_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC · {{ q.reviewer }}</small>{% endif %}
-        <button class="button button-primary" type="submit">{{ "Record a new revision" if q else "Confirm qualification" }}</button>
-      </div>
-    </form>
-  </section>
+      <section id="evidence" class="panel workflow-panel" data-workflow-panel="evidence" tabindex="-1">
+        <div class="section-heading">
+          <div><p class="eyebrow">{{ t("case.step", number=2) }}</p><h2>{{ t("case.evidence.title") }}</h2></div>
+          {% set evidence_step = workflow.steps[1] %}<span class="badge workflow-badge-{{ evidence_step.state }}">{{ evidence_step.state_label }}</span>
+        </div>
+        <p class="section-intro">{{ t("case.evidence.intro") }}</p>
 
-  <div class="layout-two layout-case">
-    <section id="actions" class="panel">
-      <div class="section-heading">
-        <div><p class="eyebrow">Action cockpit</p><h2>Recommended next actions</h2></div>
-      </div>
-      <div class="action-stack">
-        {% for item in actions %}
-          <article class="action-card{% if item.action.completed_at %} action-completed{% elif item.overdue %} action-overdue{% endif %}">
-            <span class="action-check" aria-hidden="true">{{ "✓" if item.action.completed_at else loop.index }}</span>
-            <div>
-              <h3>{{ item.action.title }}</h3>
-              <p>{{ item.action.reason }}</p>
-              {% if item.action.completed_at %}
-                <small>Completed {{ item.action.completed_at.strftime('%Y-%m-%d %H:%M') }} UTC</small>
-              {% else %}
-                <small class="{% if item.overdue %}overdue-text{% endif %}">Due {{ item.due_at.strftime('%Y-%m-%d %H:%M') }} UTC</small>
+        {% if collection_error %}<div class="alert" role="alert">{{ collection_error }}</div>{% endif %}
+        {% if capabilities.network_collection %}
+          <form action="/cases/{{ case.id }}/collections/passive" method="post" class="collection-form primary-task">
+            <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
+            <label class="confirmation-check">
+              <input type="checkbox" name="confirmed_authorized" value="true" required>
+              <span><strong>{{ t("case.evidence.authorized") }}</strong><small>{{ t("case.evidence.scope") }}</small></span>
+            </label>
+            <button class="button button-primary" type="submit"{% if latest_collection_job and latest_collection_job.status in ['queued', 'running'] %} disabled{% endif %}>{{ t("case.evidence.retry") if snapshots else t("case.evidence.start") }}</button>
+          </form>
+        {% else %}
+          <div class="capability-message">
+            <div><strong>{{ t("case.evidence.disabled") }}</strong><span>{{ t("case.evidence.manual") }}</span></div>
+            <small>{{ t("case.evidence.launcher") }}</small>
+          </div>
+        {% endif %}
+
+        {% if latest_collection_job and latest_collection_job.status in ['queued', 'running'] %}
+          <p class="job-status"><strong>{{ t("case.evidence.last_job", status=t("collector_status." ~ latest_collection_job.status.value)) }}</strong><small>{{ latest_collection_job.id }}</small></p>
+        {% endif %}
+
+        {% if latest_assessment %}
+          <section class="evidence-health" aria-label="{{ t('case.evidence.health.label') }}">
+            <div class="evidence-health-heading">
+              <strong>{{ t("case.evidence.health.title") }}</strong>
+              <span class="badge workflow-badge-{{ 'complete' if latest_assessment.outcome == 'complete' else ('limited' if latest_assessment.outcome == 'usable_with_limits' else 'attention') }}">{{ t("case.evidence.health." ~ latest_assessment.outcome) }}</span>
+            </div>
+            <ul class="evidence-source-list">
+              {% for source in latest_assessment.sources %}
+                <li class="evidence-source evidence-source-{{ source.state }}">
+                  <span class="evidence-source-marker" aria-hidden="true">{{ "✓" if source.state in ["complete", "manual"] else ("!" if source.state == "limited" else ("×" if source.state == "failed" else "—")) }}</span>
+                  <span><strong>{{ t("case.evidence.source." ~ source.collector) }}</strong><small>{{ t("case.evidence.source_state." ~ source.state) }}</small></span>
+                </li>
+              {% endfor %}
+            </ul>
+          </section>
+        {% endif %}
+
+        {% if rdap_manual_needed or manual_rdap_evidence %}
+          <details id="manual-rdap" class="manual-evidence{% if manual_rdap_evidence %} manual-evidence-resolved{% endif %}" {% if manual_evidence_error %}open{% endif %}>
+            <summary>
+              <span class="manual-evidence-summary-marker" aria-hidden="true">{{ "✓" if manual_rdap_evidence else "!" }}</span>
+              <span><strong>{{ t("case.evidence.manual_rdap.completed_title") if manual_rdap_evidence else t("case.evidence.manual_rdap.problem_title") }}</strong><small>{{ t("case.evidence.manual_rdap.completed_summary") if manual_rdap_evidence else t("case.evidence.manual_rdap.problem_summary") }}</small></span>
+              {% if manual_rdap_evidence %}<span class="badge badge-safe">{{ t("case.evidence.manual_rdap.saved_count", count=manual_rdap_evidence|length) }}</span>{% endif %}
+              {% if not manual_rdap_evidence %}<span class="manual-evidence-expand">{{ t("case.evidence.manual_rdap.expand") }}</span>{% endif %}
+            </summary>
+            <div class="manual-evidence-body">
+              {% if rdap_manual_needed %}
+                <div class="manual-procedure">
+                  <p>{{ t("case.evidence.manual_rdap.reason") }}</p>
+                  <ol>
+                    <li>{{ t("case.evidence.manual_rdap.step1", domain=case.target.registrable_domain) }}</li>
+                    <li>{{ t("case.evidence.manual_rdap.step2") }}</li>
+                    <li>{{ t("case.evidence.manual_rdap.step3") }}</li>
+                  </ol>
+                  <a class="button" href="{{ rdap_lookup_url }}" target="_blank" rel="noopener noreferrer">{{ t("case.evidence.manual_rdap.open") }}</a>
+                  {% if rdap_authoritative_url %}
+                    <p class="manual-evidence-notice">{{ t("case.evidence.manual_rdap.authoritative_help") }}</p>
+                    <a class="button button-secondary" href="{{ rdap_authoritative_url }}" target="_blank" rel="noopener noreferrer">{{ t("case.evidence.manual_rdap.authoritative_open") }}</a>
+                  {% endif %}
+                </div>
+              {% endif %}
+
+              {% if manual_evidence_error %}<div class="alert" role="alert">{{ manual_evidence_error }}</div>{% endif %}
+              <form action="/cases/{{ case.id }}/evidence/manual-rdap" method="post" class="manual-evidence-form">
+                <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
+                <label>{{ t("case.evidence.manual_rdap.content") }}<textarea name="content" rows="8" maxlength="524288" required placeholder="{{ t('case.evidence.manual_rdap.content_help') }}"></textarea></label>
+                <div class="form-row">
+                  <label>{{ t("case.evidence.manual_rdap.operator") }}<input name="operator" maxlength="80" required placeholder="{{ t('case.evidence.manual_rdap.operator_help') }}"></label>
+                  <label>{{ t("case.evidence.manual_rdap.notes") }}<input name="notes" maxlength="1000" placeholder="{{ t('case.evidence.manual_rdap.notes_help') }}"></label>
+                </div>
+                <p class="manual-evidence-notice">{{ t("case.evidence.manual_rdap.notice") }}</p>
+                <button class="button button-primary" type="submit">{{ t("case.evidence.manual_rdap.save") }}</button>
+              </form>
+
+              {% if manual_rdap_evidence %}
+                <div class="manual-evidence-list">
+                  {% for evidence in manual_rdap_evidence %}
+                    <article>
+                      <span class="badge badge-safe">{{ t("case.evidence.manual_rdap.saved") }}</span>
+                      <div><strong>{{ evidence.occurred_at.strftime('%Y-%m-%d %H:%M UTC') }}</strong><small>{{ t("case.evidence.manual_rdap.by", operator=evidence.operator) }} · {{ evidence.artifact_path }}</small>{% if evidence.notes %}<p>{{ evidence.notes }}</p>{% endif %}</div>
+                    </article>
+                  {% endfor %}
+                </div>
               {% endif %}
             </div>
-            <form action="/cases/{{ case.id }}/actions/{{ item.action.code }}" method="post">
-              <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
-              <input type="hidden" name="completed" value="{{ 'false' if item.action.completed_at else 'true' }}">
-              <button class="button button-small" type="submit">{{ "Reopen" if item.action.completed_at else "Mark complete" }}</button>
-            </form>
-          </article>
-        {% endfor %}
-      </div>
-    </section>
+          </details>
+        {% endif %}
 
-    <aside id="collection" class="panel collection-panel">
-      <div class="section-heading">
-        <div><p class="eyebrow">Collection</p><h2>Capability status</h2></div>
-      </div>
-      <dl class="definition-list">
-        <div><dt>Network</dt><dd>{{ "Enabled" if capabilities.network_collection else "Disabled" }}</dd></div>
-        <div><dt>RDAP registration</dt><dd>{{ "Enabled" if capabilities.rdap_collection else "Disabled" }}</dd></div>
-        <div><dt>Offline rendering</dt><dd>{{ "Enabled" if capabilities.screenshots else "Disabled" }}</dd></div>
-        <div><dt>External APIs</dt><dd>{{ "Enabled" if capabilities.external_apis else "Disabled" }}</dd></div>
-        <div><dt>LLM</dt><dd>{{ "Enabled" if capabilities.llm else "Disabled" }}</dd></div>
-      </dl>
-      <p class="callout">Opening this case never contacts the target. An authorized passive job collects DNS, a bounded HTTP response, the TLS leaf certificate{% if capabilities.rdap_collection %}, authoritative RDAP registration data{% endif %}{% if capabilities.screenshots %}, then renders the bounded HTML offline with JavaScript and network access disabled{% endif %}.</p>
-      {% if collection_error %}<div class="alert" role="alert">{{ collection_error }}</div>{% endif %}
-      {% if capabilities.network_collection %}
-        <form action="/cases/{{ case.id }}/collections/passive" method="post" class="collection-form">
-          <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
-          <label class="confirmation-check">
-            <input type="checkbox" name="confirmed_authorized" value="true" required>
-            <span>I am authorized to perform passive DNS, bounded HTTP/TLS and RDAP collection{% if capabilities.screenshots %}, followed by an offline static rendering{% endif %} for this target.</span>
-          </label>
-          <button class="button button-primary" type="submit"{% if latest_collection_job and latest_collection_job.status in ['queued', 'running'] %} disabled{% endif %}>Start passive evidence collection</button>
-        </form>
-      {% else %}
-        <p class="collection-disabled">Network collection is disabled by default. Restart with the dedicated opt-in launcher when you are ready to test it.</p>
-      {% endif %}
-      {% if latest_collection_job %}
-        <p class="job-status"><strong>Latest job: {{ latest_collection_job.status }}</strong><small>{{ latest_collection_job.id }}</small></p>
-      {% endif %}
-      {% if technical_review %}
-        <div class="review-due {{ 'review-overdue' if technical_review.overdue else '' }}">
-          <strong>{{ 'Technical review due now' if technical_review.overdue else 'Next technical review' }}</strong>
-          <span>{{ technical_review.due_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
-          <small>A new collection starts only after the authorization checkbox and button above.</small>
-        </div>
-      {% elif not latest_snapshot %}
-        <p class="collection-disabled">The first technical review will be scheduled after the first completed collection.</p>
-      {% endif %}
-    </aside>
-  </div>
-
-  {% if snapshots %}
-    <section class="panel snapshot-panel">
-      <div class="section-heading">
-        <div><p class="eyebrow">Passive evidence</p><h2>Technical snapshots</h2></div>
-        <span class="badge">{{ snapshots|length }} snapshot{{ 's' if snapshots|length != 1 else '' }}</span>
-      </div>
-      <div class="snapshot-stack">
-        {% for snapshot in snapshots %}
-          <article class="snapshot-card">
-            <div class="snapshot-heading">
-              <div><strong>{{ snapshot.id }}</strong><small>{{ snapshot.finished_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC</small></div>
-              <span class="badge {{ 'badge-safe' if snapshot.status == 'complete' else 'badge-high' }}">{{ snapshot.status }}</span>
-            </div>
-            {% if snapshot.next_check_due_at %}<p class="snapshot-review-date">Next operator check {{ snapshot.next_check_due_at.strftime('%Y-%m-%d %H:%M') }} UTC</p>{% endif %}
-            {% if snapshot.previous_snapshot_id %}
-              <div class="change-summary">
-                <strong>{{ snapshot.changes|length }} change{{ 's' if snapshot.changes|length != 1 else '' }} since {{ snapshot.previous_snapshot_id }}</strong>
-                {% if snapshot.changes %}
-                  <div class="change-list">
+        {% if snapshots %}
+          <div class="snapshot-stack compact-snapshots">
+            {% for snapshot in snapshots %}
+              {% if loop.index == 2 %}<details class="older-snapshots"><summary>{{ t("case.evidence.older", count=snapshots|length - 1) }}</summary><div class="snapshot-stack">{% endif %}
+              <article class="snapshot-card">
+                <div class="snapshot-heading">
+                  <div><strong>{{ t("case.evidence.snapshot", date=snapshot.finished_at.strftime('%Y-%m-%d %H:%M UTC')) }}</strong><small>{{ snapshot.id }}</small></div>
+                  <span class="badge {{ 'badge-safe' if snapshot.status == 'complete' else 'badge-high' }}">{{ t("collector_status." ~ snapshot.status.value) }}</span>
+                </div>
+                {% if snapshot.previous_snapshot_id %}
+                  <div class="change-summary">
+                    <strong>{{ t("case.evidence.changes", count=snapshot.changes|length) }}</strong>
                     {% for change in snapshot.changes %}
                       <article class="change-row {{ 'change-important' if change.important else '' }}">
                         <span class="change-kind">{{ change.change_type }}</span>
-                        <div>
-                          <strong>{{ change.collector|upper }} · {{ change.record_type or change.name }}</strong>
-                          {% if change.record_type %}<small>{{ change.name }}</small>{% endif %}
-                          <code class="break-anywhere">{{ change.before|join(', ') if change.before else '—' }} → {{ change.after|join(', ') if change.after else '—' }}</code>
-                        </div>
+                        <div><strong>{{ change.collector|upper }} · {{ change.record_type or change.name }}</strong><code class="break-anywhere">{{ change.before|join(', ') if change.before else '—' }} → {{ change.after|join(', ') if change.after else '—' }}</code></div>
                       </article>
                     {% endfor %}
                   </div>
                 {% else %}
-                  <p class="no-change">No normalized technical change detected.</p>
+                  <p class="no-change">{{ t("case.evidence.reference") }}</p>
+                {% endif %}
+                <details class="snapshot-raw">
+                  <summary>{{ t("case.evidence.show_raw") }}</summary>
+                  {% for result in snapshot.results %}
+                    <p><strong>{{ result.collector|upper }}</strong> · {{ t("case.evidence.observations", count=result.observations|length) }} · {{ t("case.evidence.files", count=result.artifacts|length) }}</p>
+                    {% if result.observations %}
+                      <div class="dns-records">
+                        {% for observation in result.observations %}
+                          <div><span>{{ observation.record_type or observation.category }}</span><code class="break-anywhere">{{ observation.name }} · {{ observation.value }}</code>{% if observation.ttl is not none %}<small>TTL {{ observation.ttl }}</small>{% endif %}</div>
+                        {% endfor %}
+                      </div>
+                    {% endif %}
+                    {% for error in result.errors %}<div class="alert" role="alert"><strong>{{ error.code }}</strong> · {{ t("collection.error." ~ error.code, default=error.message) }}</div>{% endfor %}
+                    {% if result.collector == "screenshot" and result.artifacts %}
+                      <figure class="capture-preview"><img src="/cases/{{ case.id }}/snapshots/{{ snapshot.id }}/capture.png" alt="{{ t('case.evidence.capture_alt', id=snapshot.id) }}" loading="lazy"><figcaption>{{ t("case.evidence.capture_caption") }}</figcaption></figure>
+                    {% endif %}
+                  {% endfor %}
+                </details>
+              </article>
+              {% if loop.last and loop.index > 1 %}</div></details>{% endif %}
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="empty-workspace">{{ t("case.evidence.none") }}</p>
+        {% endif %}
+      </section>
+
+      {% set q = case.qualification %}
+      <section id="qualification" class="panel workflow-panel" data-workflow-panel="qualification" tabindex="-1">
+        <div class="section-heading">
+          <div><p class="eyebrow">{{ t("case.step", number=3) }}</p><h2>{{ t("case.qualification.title") }}</h2></div>
+          <span class="badge {{ 'badge-safe' if q else 'badge-high' }}">{{ t("case.complete") if q else t("case.to_do") }}</span>
+        </div>
+        {% if q %}
+          <div class="completion-summary">
+            <div><strong>{{ t("case.qualification.level", level=q.confirmed_criticality.value|upper) }}</strong><span>{{ t("case.qualification.validated", reviewer=q.reviewer, date=q.occurred_at.strftime('%Y-%m-%d %H:%M UTC')) }}</span></div>
+            <span aria-hidden="true">✓</span>
+          </div>
+        {% endif %}
+        {% if qualification_error %}<div class="alert" role="alert">{{ qualification_error }}</div>{% endif %}
+
+        <details class="task-disclosure" {% if not q or qualification_error %}open{% endif %}>
+          <summary>{{ t("case.qualification.edit") if q else t("case.qualification.start") }}</summary>
+          <form action="/cases/{{ case.id }}/qualification" method="post" class="qualification-form">
+            <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
+            <fieldset class="decision-list">
+              <legend>{{ t("case.qualification.observations") }}</legend>
+              <label class="decision"><input type="checkbox" name="brand_represented"{% if q and q.brand_represented %} checked{% endif %}><span><strong>{{ t("case.qualification.brand.title") }}</strong><small>{{ t("case.qualification.brand.help") }}</small></span></label>
+              <label class="decision"><input type="checkbox" name="copied_elements"{% if q and q.copied_elements %} checked{% endif %}><span><strong>{{ t("case.qualification.copy.title") }}</strong><small>{{ t("case.qualification.copy.help") }}</small></span></label>
+              <label class="decision"><input type="checkbox" name="sensitive_input_or_payment"{% if q and q.sensitive_input_or_payment %} checked{% endif %}><span><strong>{{ t("case.qualification.sensitive.title") }}</strong><small>{{ t("case.qualification.sensitive.help") }}</small></span></label>
+              <label class="decision"><input type="checkbox" name="victims_or_transactions"{% if q and q.victims_or_transactions %} checked{% endif %}><span><strong>{{ t("case.qualification.victims.title") }}</strong><small>{{ t("case.qualification.victims.help") }}</small></span></label>
+              <label class="decision"><input type="checkbox" name="related_case_or_campaign"{% if q and q.related_case_or_campaign %} checked{% endif %}><span><strong>{{ t("case.qualification.related.title") }}</strong><small>{{ t("case.qualification.related.help") }}</small></span></label>
+              <label class="decision decision-factual"><input type="checkbox" name="publicly_available"{% if q and q.publicly_available %} checked{% endif %}><span><strong>{{ t("case.qualification.public.title") }}</strong><small>{{ t("case.qualification.public.help") }}</small></span></label>
+            </fieldset>
+            <div class="grid-two">
+              <label>{{ t("case.qualification.confirmed") }}<select name="confirmed_criticality" required>{% for criticality in criticalities %}<option value="{{ criticality }}"{% if (q and q.confirmed_criticality == criticality) or (not q and case.criticality_proposed == criticality) %} selected{% endif %}>{{ t("criticality." ~ criticality.value) }}</option>{% endfor %}</select></label>
+              <label>{{ t("case.qualification.reviewer") }}<input name="reviewer" required maxlength="80" value="{{ q.reviewer if q else '' }}" placeholder="Ex. MG"></label>
+            </div>
+            <label>{{ t("case.qualification.reason") }}<textarea name="override_reason" rows="3" maxlength="1000" placeholder="{{ t('case.qualification.reason_help') }}">{{ q.override_reason if q and q.override_reason else '' }}</textarea></label>
+            <div class="form-actions"><button class="button button-primary" type="submit">{{ t("case.qualification.save") if q else t("case.qualification.confirm") }}</button></div>
+          </form>
+        </details>
+      </section>
+
+      <section id="reporting" class="panel workflow-panel" data-workflow-panel="reporting" tabindex="-1">
+        <div class="section-heading">
+          <div><p class="eyebrow">{{ t("case.step", number=4) }}</p><h2>{{ t("case.reporting.title") }}</h2></div>
+          <span class="badge badge-safe">{{ t("case.reporting.human_only") }}</span>
+        </div>
+        <p class="section-intro">{{ t("case.reporting.intro") }}</p>
+
+        <div class="reporting-priority-list">
+          <section class="reporting-tier reporting-tier-primary">
+            <div class="reporting-tier-heading"><span class="reporting-tier-number">1</span><div><p class="eyebrow">{{ t("case.reporting.priority_first") }}</p><h3>{{ t("case.reporting.registrar.title") }}</h3><p>{{ t("case.reporting.registrar.help") }}</p></div></div>
+            <div class="reporting-actor-card {{ 'actor-known' if registrar_actor.known else 'actor-unknown' }}">
+              <div>
+                {% if registrar_actor.known %}
+                  <span class="badge badge-safe">{{ t("case.reporting.identified") }}</span>
+                  <strong>{{ registrar_actor.name or t("case.reporting.registrar.identified") }}</strong>
+                  {% if registrar_actor.handle %}<small>{{ t("case.reporting.registrar.handle", handle=registrar_actor.handle) }}</small>{% endif %}
+                  {% if registrar_actor.email %}<a href="mailto:{{ registrar_actor.email }}">{{ registrar_actor.email }}</a>{% endif %}
+                {% else %}
+                  <span class="badge badge-warning">{{ t("case.reporting.to_identify") }}</span>
+                  <strong>{{ t("case.reporting.registrar.unknown") }}</strong>
+                  <small>{{ t("case.reporting.registrar.unknown_help") }}</small>
                 {% endif %}
               </div>
-            {% else %}
-              <p class="no-change">Baseline snapshot — future collections will be compared with this one.</p>
-            {% endif %}
-            <details class="snapshot-raw">
-              <summary>Show collector details and unchanged observations</summary>
-              {% for result in snapshot.results %}
-                <p>{{ result.collector|upper }} collector {{ result.version }} · {{ result.observations|length }} observations · {{ result.artifacts|length }} raw responses</p>
-                {% if result.observations %}
-                  <div class="dns-records">
-                    {% for observation in result.observations %}
-                      <div><span>{{ observation.record_type or observation.category }}</span><code class="break-anywhere">{{ observation.name }} · {{ observation.value }}</code>{% if observation.ttl is not none %}<small>TTL {{ observation.ttl }}</small>{% endif %}</div>
-                    {% endfor %}
-                  </div>
-                {% endif %}
-                {% for error in result.errors %}<div class="alert" role="alert"><strong>{{ error.code }}</strong> · {{ error.message }}</div>{% endfor %}
-                {% if result.collector == "screenshot" and result.artifacts %}
-                  <figure class="capture-preview">
-                    <img src="/cases/{{ case.id }}/snapshots/{{ snapshot.id }}/capture.png" alt="Offline static rendering captured for snapshot {{ snapshot.id }}" loading="lazy">
-                    <figcaption>Derived offline rendering · JavaScript disabled · network blocked</figcaption>
-                  </figure>
-                {% endif %}
+              {% if reporting_groups.discovery %}<a class="button" href="{{ reporting_groups.discovery[0].action_url }}" target="_blank" rel="noopener noreferrer">{{ t("case.reporting.registrar.lookup") }}</a>{% endif %}
+            </div>
+            <details class="priority-tool" open>
+              <summary>{{ t("case.reporting.registrar.prepare") }}</summary>
+              <label class="email-recipient">{{ t("case.reporting.recipient") }}<input id="email-recipient" type="email" maxlength="254" autocomplete="off" value="{{ registrar_actor.email or '' }}" placeholder="abuse@registrar.example"><small>{{ t("case.reporting.recipient_help") }}</small></label>
+              <div class="tabs" role="tablist" aria-label="{{ t('case.reporting.draft_language') }}">{% for item in drafts %}<button class="tab-button{% if loop.first %} active{% endif %}" data-tab-target="draft-{{ item.draft.language }}" type="button">{{ item.draft.language|upper }}</button>{% endfor %}</div>
+              {% for item in drafts %}
+                <article id="draft-{{ item.draft.language }}" class="draft{% if not loop.first %} hidden{% endif %}">
+                  <label>{{ t("case.reporting.subject") }}<input id="subject-{{ item.draft.language }}" value="{{ item.draft.subject }}" readonly></label>
+                  <label>{{ t("case.reporting.body") }}<textarea id="body-{{ item.draft.language }}" rows="12" readonly>{{ item.draft.body }}</textarea></label>
+                  <p class="draft-meta">{{ t("case.reporting.template", version=item.draft.template_version, fields=item.draft.missing_placeholders|join(', ')) }}</p>
+                  <div class="button-row"><button class="button" type="button" data-copy="#subject-{{ item.draft.language }}">{{ t("case.reporting.copy_subject") }}</button><button class="button" type="button" data-copy="#body-{{ item.draft.language }}">{{ t("case.reporting.copy_body") }}</button><a class="button button-primary" href="{{ item.mailto }}" data-email-draft data-recipient="#email-recipient" data-subject="#subject-{{ item.draft.language }}" data-body="#body-{{ item.draft.language }}">{{ t("case.reporting.open_mail") }}</a></div>
+                </article>
               {% endfor %}
             </details>
-          </article>
-        {% endfor %}
-      </div>
-    </section>
-  {% endif %}
+          </section>
 
-  <section class="panel timeline-panel">
-    <div class="section-heading">
-      <div><p class="eyebrow">Audit trail</p><h2>Workflow history</h2></div>
-      <span class="badge">{{ history|length }} events</span>
-    </div>
-    {% if history %}
-      <ol class="timeline">
-        {% for item in history %}
-          <li>
-            <span class="timeline-dot" aria-hidden="true"></span>
+          <section class="reporting-tier">
+            <div class="reporting-tier-heading"><span class="reporting-tier-number">2</span><div><h3>{{ t("case.reporting.protection.title") }}</h3><p>{{ t("case.reporting.protection.help") }}</p></div></div>
+            <div class="channel-grid">{% for item in reporting_groups.user_protection %}{{ channel_card(item) }}{% endfor %}</div>
+          </section>
+
+          <section class="reporting-tier">
+            <div class="reporting-tier-heading"><span class="reporting-tier-number">3</span><div><h3>{{ t("case.reporting.registry.title") }}</h3><p>{{ t("case.reporting.registry.help", tld=tld) }}</p></div></div>
+            {% if registry_channel %}
+              {{ channel_card(registry_channel) }}
+              <div class="registry-contact"><strong>{{ t("case.reporting.registry.contact") }}</strong><a href="mailto:{{ registry_channel.channel.recipient_email }}">{{ registry_channel.channel.recipient_email }}</a><a href="{{ registry_channel.source_url }}" target="_blank" rel="noopener noreferrer">{{ t("case.reporting.registry.iana_source") }}</a></div>
+              <details class="priority-tool">
+                <summary>{{ t("case.reporting.registry.prepare") }}</summary>
+                <div class="tabs" role="tablist" aria-label="{{ t('case.reporting.draft_language') }}">{% for item in registry_drafts %}<button class="tab-button{% if loop.first %} active{% endif %}" data-tab-target="registry-draft-{{ item.draft.language }}" type="button">{{ item.draft.language|upper }}</button>{% endfor %}</div>
+                {% for item in registry_drafts %}
+                  <article id="registry-draft-{{ item.draft.language }}" class="draft{% if not loop.first %} hidden{% endif %}">
+                    <label>{{ t("case.reporting.subject") }}<input id="registry-subject-{{ item.draft.language }}" value="{{ item.draft.subject }}" readonly></label>
+                    <label>{{ t("case.reporting.body") }}<textarea id="registry-body-{{ item.draft.language }}" rows="12" readonly>{{ item.draft.body }}</textarea></label>
+                    <div class="button-row"><button class="button" type="button" data-copy="#registry-subject-{{ item.draft.language }}">{{ t("case.reporting.copy_subject") }}</button><button class="button" type="button" data-copy="#registry-body-{{ item.draft.language }}">{{ t("case.reporting.copy_body") }}</button><a class="button button-primary" href="{{ item.mailto }}">{{ t("case.reporting.open_mail") }}</a></div>
+                  </article>
+                {% endfor %}
+              </details>
+            {% else %}
+              <div class="reporting-actor-card actor-unknown"><div><span class="badge badge-warning">{{ t("case.reporting.to_identify") }}</span><strong>{{ t("case.reporting.registry.unknown", tld=tld) }}</strong><small>{{ t("case.reporting.registry.unknown_help") }}</small></div><a class="button" href="{{ tld_authority_lookup_url }}" target="_blank" rel="noopener noreferrer">{{ t("case.reporting.registry.open_iana") }}</a></div>
+            {% endif %}
+          </section>
+
+          <section class="reporting-tier reporting-tier-escalation">
+            <div class="reporting-tier-heading"><span class="reporting-tier-number">4</span><div><p class="eyebrow">{{ t("case.reporting.last_resort") }}</p><h3>{{ t("case.reporting.icann.title") }}</h3><p>{{ t("case.reporting.icann.help") }}</p></div></div>
+            <div class="channel-grid">{% for item in reporting_groups.icann %}{{ channel_card(item) }}{% endfor %}</div>
+          </section>
+        </div>
+
+        {% if reporting_groups.other %}
+          <details class="toolbox-disclosure">
+            <summary>{{ t("case.reporting.other") }}</summary>
+            <div class="channel-grid">{% for item in reporting_groups.other %}{{ channel_card(item) }}{% endfor %}</div>
+          </details>
+        {% endif %}
+
+        <details class="toolbox-disclosure">
+          <summary>{{ t("case.reporting.copy_summary") }}</summary>
+          <div class="report-summary-grid">
+            <article class="report-summary"><label>{{ t("case.reporting.french_summary") }}<textarea id="report-summary-fr" rows="10" readonly>{{ reporting_summaries.fr }}</textarea></label><button class="button" type="button" data-copy="#report-summary-fr">{{ t("case.reporting.copy_french") }}</button></article>
+            <article class="report-summary"><label>{{ t("case.reporting.english_summary") }}<textarea id="report-summary-en" rows="10" readonly>{{ reporting_summaries.en }}</textarea></label><button class="button" type="button" data-copy="#report-summary-en">{{ t("case.reporting.copy_english") }}</button></article>
+          </div>
+        </details>
+
+        <details id="record-submission" class="task-disclosure" {% if submission_error %}open{% endif %}>
+          <summary>{{ t("case.reporting.record") }}</summary>
+          <p>{{ t("case.reporting.record_help") }}</p>
+          {% if submission_error %}<div class="alert" role="alert">{{ submission_error }}</div>{% endif %}
+          <form class="submission-form" method="post" action="/cases/{{ case.id }}/submissions">
+            <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
+            <label>{{ t("case.reporting.channel") }}<select name="channel_id" required><option value="">{{ t("case.reporting.choose_channel") }}</option>{% for channel in submission_options %}<option value="{{ channel.id }}">{{ channel.name }} · {{ channel.category|replace('_', ' ') }}</option>{% endfor %}</select></label>
+            <label>{{ t("case.reporting.destination") }}<input name="destination" maxlength="254" placeholder="{{ t('case.reporting.destination_help') }}"></label>
+            <label>{{ t("case.reporting.reference") }}<input name="external_reference" maxlength="200" placeholder="{{ t('case.reporting.reference_help') }}"></label>
+            <label class="submission-notes">{{ t("case.reporting.notes") }}<textarea name="notes" rows="3" maxlength="1000" placeholder="{{ t('case.reporting.notes_help') }}"></textarea></label>
+            <label class="confirmation-check submission-notes"><input type="checkbox" name="confirmed_submitted" value="true" required><span>{{ t("case.reporting.confirm_sent") }}</span></label>
+            <div class="submission-notes form-actions"><button class="button button-primary" type="submit">{{ t("case.reporting.save") }}</button></div>
+          </form>
+        </details>
+      </section>
+
+      <section id="follow-up" class="panel workflow-panel" data-workflow-panel="follow-up" tabindex="-1">
+        <div class="section-heading">
+          <div><p class="eyebrow">{{ t("case.step", number=5) }}</p><h2>{{ t("case.follow_up.title") }}</h2></div>
+          {% set follow_step = workflow.steps[4] %}<span class="badge workflow-badge-{{ follow_step.state }}">{{ follow_step.state_label }}</span>
+        </div>
+        <div class="follow-up-state-strip" aria-label="{{ t('case.follow_up.current_state') }}">
+          <span><small>{{ t("case.follow_up.case_state") }}</small><strong>{{ t("state." ~ case.state.value) }}</strong></span>
+          <span><small>{{ t("case.follow_up.availability") }}</small><strong class="availability-text-{{ availability.state }}">{{ t("availability." ~ availability.state) }}{% if availability.http_status %} · HTTP {{ availability.http_status }}{% endif %}</strong></span>
+          <span><small>{{ t("case.follow_up.last_check") }}</small><strong>{{ availability.checked_at.strftime('%Y-%m-%d %H:%M UTC') if availability.checked_at else t("case.follow_up.never_checked") }}</strong></span>
+          <span><small>{{ t("case.monitoring.title") }}</small><strong>{{ t("case.monitoring.active") if case.monitoring_enabled else t("case.monitoring.inactive") }}</strong></span>
+        </div>
+
+        {% if latest_submission %}
+          <section class="follow-up-now {{ 'action-due' if process_action.overdue else '' }}" aria-labelledby="follow-up-now-title">
             <div>
-              {% if item.kind == "action" %}
-                <strong>{{ "Completed" if item.event.completed else "Reopened" }} · {{ item.action_title }}</strong>
-              {% elif item.kind == "qualification" %}
-                <strong>Qualification confirmed · {{ item.event.confirmed_criticality|upper }}</strong>
-                <span class="timeline-detail">Reviewed by {{ item.event.reviewer }}{% if item.event.override_reason %} · Override: {{ item.event.override_reason }}{% endif %}</span>
-              {% elif item.kind == "submission" %}
-                <strong>External submission recorded · {{ item.event.channel_name }}</strong>
-                <span class="timeline-detail">{% if item.event.external_reference %}Reference {{ item.event.external_reference }} · {% endif %}Follow-up due {{ item.event.follow_up_due_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
-              {% else %}
-                <strong>Passive snapshot recorded · {{ item.event.status|upper }}</strong>
-                <span class="timeline-detail">{{ item.event.results|length }} collector result{{ 's' if item.event.results|length != 1 else '' }} · {{ item.event.id }}</span>
-              {% endif %}
-              <small>{{ item.event.occurred_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC · {{ item.event.id }}</small>
+              <div class="next-process-heading"><span class="badge">{{ process_action.phase|upper }}</span><span class="badge {{ 'badge-high' if process_action.overdue else 'badge-safe' }}">{{ t("case.follow_up.act_now") if process_action.overdue else t("case.follow_up.planned") }}</span></div>
+              <p class="eyebrow">{{ t("case.follow_up.now") }}</p>
+              <h3 id="follow-up-now-title">{{ t(process_action.title_key) }}</h3>
+              <p>{{ t(process_action.detail_key) }}</p>
+              <strong>{{ t("case.follow_up.due_at", date=process_action.due_at.strftime('%Y-%m-%d %H:%M UTC')) }}</strong>
             </div>
+            <a class="button button-primary" href="{{ '#evidence' if process_action.code == 'confirm_mitigation' else '#reporting' }}" data-workflow-link>{{ t("case.follow_up.prepare_action") }}</a>
+          </section>
+        {% else %}
+          <section class="follow-up-now">
+            <div><p class="eyebrow">{{ t("case.follow_up.now") }}</p><h3>{{ t("case.follow_up.empty") }}</h3></div>
+            <a class="button button-primary" href="#reporting" data-workflow-link>{{ t("case.follow_up.prepare") }}</a>
+          </section>
+        {% endif %}
+
+        <section class="follow-up-future" aria-labelledby="follow-up-future-title">
+          <div class="follow-up-future-heading">
+            <p class="eyebrow">{{ t("case.follow_up.next_later") }}</p>
+            <h3 id="follow-up-future-title">{{ t("case.follow_up.known_events") }}</h3>
+          </div>
+          <div class="future-event-list">
+            {% if technical_review %}
+              <a class="future-event {{ 'future-event-due' if technical_review.overdue else '' }}" href="#evidence" data-workflow-link>
+                <span>{{ t("case.follow_up.check_due") if technical_review.overdue else t("case.follow_up.next_check") }}</span>
+                <strong>{{ technical_review.due_at.strftime('%Y-%m-%d %H:%M UTC') }}</strong>
+              </a>
+            {% endif %}
+            {% if monitoring_due_at %}
+              <span class="future-event"><span>{{ t("case.monitoring.next_check") }}</span><strong>{{ monitoring_due_at.strftime('%Y-%m-%d %H:%M UTC') }}</strong></span>
+            {% endif %}
+            {% if not technical_review and not monitoring_due_at %}
+              <span class="future-event"><span>{{ t("case.follow_up.no_future_event") }}</span></span>
+            {% endif %}
+          </div>
+        </section>
+
+        <details class="follow-up-disclosure" {% if monitoring_error %}open{% endif %}>
+          <summary><span><strong>{{ t("case.monitoring.manage") }}</strong><small>{{ t("case.monitoring.summary", status=t("case.monitoring.active") if case.monitoring_enabled else t("case.monitoring.inactive")) }}</small></span></summary>
+          <section class="monitoring-panel">
+            <p>{{ t("case.monitoring.help") }}</p>
+            {% if monitoring_error %}<div class="alert" role="alert">{{ monitoring_error }}</div>{% endif %}
+            {% if case.monitoring_enabled %}
+              <div class="monitoring-status"><strong>{{ t("case.monitoring.next_check") }}</strong><span>{{ monitoring_due_at.strftime('%Y-%m-%d %H:%M UTC') if monitoring_due_at else t("case.monitoring.pending") }}</span><small>{{ t("case.monitoring.interval", hours=case.monitoring_interval_hours) }}</small></div>
+            {% endif %}
+            {% if capabilities.network_collection %}
+              <form method="post" action="/cases/{{ case.id }}/monitoring" class="monitoring-form">
+                <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
+                <input type="hidden" name="enabled" value="true">
+                <label>{{ t("case.monitoring.frequency") }}<select name="interval_hours">{% for hours in (6, 12, 24, 72, 168) %}<option value="{{ hours }}"{% if case.monitoring_interval_hours == hours %} selected{% endif %}>{{ t("case.monitoring.hours", hours=hours) }}</option>{% endfor %}</select></label>
+                <label class="confirmation-check"><input type="checkbox" name="confirmed_authorized" value="true" required><span>{{ t("case.monitoring.confirm") }}</span></label>
+                <button class="button" type="submit">{{ t("case.monitoring.update") if case.monitoring_enabled else t("case.monitoring.enable") }}</button>
+              </form>
+              {% if case.monitoring_enabled %}<form method="post" action="/cases/{{ case.id }}/monitoring" class="monitoring-disable"><input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}"><input type="hidden" name="enabled" value="false"><input type="hidden" name="interval_hours" value="{{ case.monitoring_interval_hours }}"><button class="button" type="submit">{{ t("case.monitoring.disable") }}</button></form>{% endif %}
+            {% else %}
+              <p class="callout">{{ t("case.monitoring.network_disabled") }}</p>
+            {% endif %}
+            <small class="monitoring-runtime-note">{{ t("case.monitoring.runtime_note") }}</small>
+          </section>
+        </details>
+
+        <details class="follow-up-disclosure">
+          <summary><span><strong>{{ t("case.follow_up.history") }}</strong><small>{{ t("case.follow_up.history_summary", count=case.submissions|length) }}</small></span></summary>
+          {% if latest_submission %}
+            <div class="submission-list">
+              {% for submission in case.submissions|reverse %}
+                <article><div><strong>{{ submission.channel_name }}</strong><small>{{ t("case.follow_up.sent", date=submission.occurred_at.strftime('%Y-%m-%d %H:%M UTC')) }}</small></div><div>{% if submission.external_reference %}<strong>{{ submission.external_reference }}</strong>{% else %}<span>{{ t("case.follow_up.no_reference") }}</span>{% endif %}</div></article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p class="empty-state">{{ t("case.follow_up.no_submission") }}</p>
+          {% endif %}
+        </details>
+
+        <details class="follow-up-disclosure">
+          <summary><span><strong>{{ t("case.follow_up.help_title") }}</strong><small>{{ t("case.follow_up.help_summary") }}</small></span></summary>
+          <p>{{ t("case.follow_up.availability_help") }}</p>
+          <p>{{ t("case.monitoring.runtime_note") }}</p>
+        </details>
+      </section>
+    </div>
+  </div>
+
+  {% if latest_collection_job %}
+    <dialog class="collection-dialog"
+            data-collection-dialog
+            data-auto-open="{{ 'true' if collection_modal_open else 'false' }}"
+            data-status-url="/api/v1/cases/{{ case.id }}/collections/latest"
+            data-complete-message="{{ t('collection.dialog.complete') }}"
+            data-limited-message="{{ t('collection.dialog.usable_with_limits') }}"
+            data-failed-message="{{ t('collection.dialog.action_required') }}"
+            data-status-pending="{{ t('collection.stage.pending') }}"
+            data-status-running="{{ t('collection.stage.running') }}"
+            data-status-complete="{{ t('collection.stage.complete') }}"
+            data-status-warning="{{ t('collection.stage.warning') }}"
+            data-status-failed="{{ t('collection.stage.failed') }}"
+            aria-labelledby="collection-dialog-title">
+      <div class="collection-dialog-heading">
+        <div><p class="eyebrow">{{ case.id }}</p><h2 id="collection-dialog-title">{{ t("collection.dialog.title") }}</h2></div>
+        <span class="collection-live-indicator" data-collection-live aria-hidden="true"></span>
+      </div>
+      <p data-collection-message>{{ t("collection.dialog.running") }}</p>
+      <ol class="collection-progress-list">
+        {% for stage in latest_collection_job.planned_stages %}
+          {% set stage_done = stage in latest_collection_job.completed_stages %}
+          {% set stage_running = stage == latest_collection_job.current_stage %}
+          <li class="collection-stage {{ 'stage-complete' if stage_done else ('stage-running' if stage_running else 'stage-pending') }}" data-collection-stage="{{ stage }}">
+            <span class="collection-stage-marker" aria-hidden="true">{{ '✓' if stage_done else loop.index }}</span>
+            <span><strong>{{ t("collection.stage." ~ stage) }}</strong><small data-stage-status>{{ t("collection.stage.complete") if stage_done else (t("collection.stage.running") if stage_running else t("collection.stage.pending")) }}</small></span>
           </li>
         {% endfor %}
       </ol>
-    {% else %}
-      <p class="empty-state">No workflow event yet. Completing an action creates an immutable, integrity-checked event.</p>
-    {% endif %}
-  </section>
-
-  <section class="panel reporting-workspace">
-    <div class="section-heading">
-      <div>
-        <p class="eyebrow">Reporting workspace</p>
-        <h2>Open the right official channel</h2>
+      <p class="collection-background-note">{{ t("collection.dialog.background") }}</p>
+      <div class="collection-dialog-actions">
+        <button class="button" type="button" data-collection-close>{{ t("collection.dialog.close") }}</button>
+        <a class="button button-primary hidden" href="/cases/{{ case.id }}#evidence" data-collection-finish>{{ t("collection.dialog.view") }}</a>
       </div>
-      <span class="badge badge-safe">Human submission only</span>
-    </div>
-    <p class="lead">Copy the prepared facts, then open the official form. Links are versioned and show their last verification date; no form is submitted by this application.</p>
+    </dialog>
+  {% endif %}
 
-    <div class="report-summary-grid">
-      <article class="report-summary">
-        <label>English form summary<textarea id="report-summary-en" rows="11" readonly>{{ reporting_summaries.en }}</textarea></label>
-        <button class="button" type="button" data-copy="#report-summary-en">Copy English summary</button>
-      </article>
-      <article class="report-summary">
-        <label>Résumé français<textarea id="report-summary-fr" rows="11" readonly>{{ reporting_summaries.fr }}</textarea></label>
-        <button class="button" type="button" data-copy="#report-summary-fr">Copier le résumé français</button>
-      </article>
-    </div>
-
-    <div class="channel-grid">
-      {% for item in reporting_channels %}
-        <article class="channel-card{% if item.recommended %} channel-recommended{% endif %}">
-          <div class="channel-card-heading">
-            <span class="badge">{{ item.channel.category|replace('_', ' ') }}</span>
-            {% if item.recommended %}<span class="badge badge-safe">Suggested</span>{% endif %}
-          </div>
-          <h3>{{ item.channel.name }}</h3>
-          <p>{{ item.channel.purpose }}</p>
-          <p class="channel-reason">{{ item.recommendation_reason }}</p>
-          <details>
-            <summary>Required information</summary>
-            <ul class="compact-list">
-              {% for field in item.channel.required_fields %}<li>{{ field }}</li>{% endfor %}
-            </ul>
-            <p>{{ item.channel.notes }}</p>
-          </details>
-          <div class="channel-card-footer">
-            <small>Verified {{ item.channel.verified_on }} · <a href="{{ item.source_url }}" target="_blank" rel="noopener noreferrer">official source</a></small>
-            <a class="button button-primary" href="{{ item.action_url }}" target="_blank" rel="noopener noreferrer">Open official site</a>
-          </div>
-        </article>
-      {% endfor %}
-    </div>
-
-    <div id="record-submission" class="submission-recorder">
-      <div class="section-heading">
-        <div>
-          <p class="eyebrow">Follow-up cadence</p>
-          <h2>Record a completed submission</h2>
-        </div>
-        {% if latest_submission %}
-          <span class="badge">Next follow-up {{ latest_submission.follow_up_due_at.strftime('%Y-%m-%d %H:%M') }} UTC</span>
-        {% else %}
-          <span class="badge">Waiting for confirmation</span>
-        {% endif %}
-      </div>
-      <p>Use this only after the official form or email has actually been sent. The toolkit stores an integrity-checked event and moves the case to <code>waiting_external</code>.</p>
-      {% if submission_error %}<p class="alert alert-error">{{ submission_error }}</p>{% endif %}
-      <form class="submission-form" method="post" action="/cases/{{ case.id }}/submissions">
-        <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
-        <label>Channel
-          <select name="channel_id" required>
-            <option value="">Choose the completed channel</option>
-            {% for channel in submission_options %}
-              <option value="{{ channel.id }}">{{ channel.name }} · {{ channel.category|replace('_', ' ') }}</option>
+  <details id="case-details" class="panel case-details">
+    <summary><span><strong>{{ t("case.details.title") }}</strong><small>{{ t("case.details.summary", count=history|length) }}</small></span></summary>
+    <div class="secondary-grid">
+      <section>
+        <h2>{{ t("case.details.history") }}</h2>
+        {% if history %}
+          <ol class="timeline">
+            {% for item in history %}
+              <li><span class="timeline-dot" aria-hidden="true"></span><div>
+                {% if item.kind == "action" %}<strong>{{ t("case.details.completed") if item.event.completed else t("case.details.reopened") }} · {{ item.action_title }}</strong>
+                {% elif item.kind == "qualification" %}<strong>{{ t("case.details.qualification", level=item.event.confirmed_criticality|upper) }}</strong><span class="timeline-detail">{{ t("case.details.reviewed", reviewer=item.event.reviewer) }}</span>
+                {% elif item.kind == "submission" %}<strong>{{ t("case.details.report", channel=item.event.channel_name) }}</strong><span class="timeline-detail">{{ t("case.details.reminder", date=item.event.follow_up_due_at.strftime('%Y-%m-%d %H:%M UTC')) }}</span>
+                {% elif item.kind == "manual_evidence" %}<strong>{{ t("case.details.manual_evidence") }}</strong><span class="timeline-detail">{{ t("case.evidence.manual_rdap.by", operator=item.event.operator) }}</span>
+                {% elif item.kind == "monitoring" %}<strong>{{ t("case.details.monitoring", status=t("case.details.monitoring_enabled") if item.event.enabled else t("case.details.monitoring_disabled"), hours=item.event.interval_hours) }}</strong>
+                {% elif item.kind == "lifecycle" %}<strong>{{ t("case.details.lifecycle." ~ item.event.action, state=t("state." ~ item.event.new_state.value)) }}</strong><span class="timeline-detail">{{ t("case.details.lifecycle_by", operator=item.event.operator) }} · {{ item.event.reason }}</span>
+                {% else %}<strong>{{ t("case.details.snapshot", status=item.event.status|upper) }}</strong>{% endif %}
+                <small>{{ item.event.occurred_at.strftime('%d/%m/%Y %H:%M:%S') }} UTC · {{ item.event.id }}</small>
+              </div></li>
             {% endfor %}
-          </select>
-        </label>
-        <label>Destination used
-          <input name="destination" maxlength="254" placeholder="Official form URL or abuse email">
-        </label>
-        <label>External reference
-          <input name="external_reference" maxlength="200" placeholder="Ticket, acknowledgement or message ID">
-        </label>
-        <label class="submission-notes">Notes
-          <textarea name="notes" rows="3" maxlength="1000" placeholder="Useful factual follow-up details"></textarea>
-        </label>
-        <label class="confirmation-check submission-notes">
-          <input type="checkbox" name="confirmed_submitted" value="true" required>
-          <span>I confirm this submission was actually sent outside the toolkit.</span>
-        </label>
-        <div class="submission-notes"><button class="button button-primary" type="submit">Record submission and schedule follow-up</button></div>
-      </form>
-
-      {% if case.submissions %}
-        <div class="submission-list">
-          {% for submission in case.submissions|reverse %}
-            <article>
-              <div><strong>{{ submission.channel_name }}</strong><small>Sent {{ submission.occurred_at.strftime('%Y-%m-%d %H:%M') }} UTC</small></div>
-              <div>{% if submission.external_reference %}<strong>{{ submission.external_reference }}</strong>{% else %}<span>No external reference</span>{% endif %}<small>Follow-up {{ submission.follow_up_due_at.strftime('%Y-%m-%d %H:%M') }} UTC</small></div>
+          </ol>
+        {% else %}<p class="empty-state">{{ t("case.details.empty") }}</p>{% endif %}
+      </section>
+      <section>
+        <h2>{{ t("case.details.actions") }}</h2>
+        <div class="action-stack">
+          {% for item in actions %}
+            <article class="action-card{% if item.action.completed_at %} action-completed{% elif item.overdue %} action-overdue{% endif %}">
+              <span class="action-check" aria-hidden="true">{{ "✓" if item.action.completed_at else loop.index }}</span>
+              <div><h3>{{ item.action.title }}</h3><p>{{ item.action.reason }}</p></div>
+              <form action="/cases/{{ case.id }}/actions/{{ item.action.code }}" method="post"><input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}"><input type="hidden" name="completed" value="{{ 'false' if item.action.completed_at else 'true' }}"><button class="button button-small" type="submit">{{ t("case.details.reopen") if item.action.completed_at else t("case.details.mark_complete") }}</button></form>
             </article>
           {% endfor %}
         </div>
-      {% endif %}
+      </section>
     </div>
-  </section>
+  </details>
 
-  <section class="panel">
-    <div class="section-heading">
-      <div><p class="eyebrow">Draft workspace</p><h2>Registrar drafts</h2></div>
-      <span class="badge badge-safe">Not sent</span>
-    </div>
-
-    <label class="email-recipient">
-      Email recipient (optional)
-      <input id="email-recipient" type="email" maxlength="254" autocomplete="off" placeholder="abuse@registrar.example">
-      <small>Paste the official abuse email found through ICANN Lookup or the provider site. This value is used only to open your mail client and is not stored yet.</small>
-    </label>
-
-    <div class="tabs" role="tablist" aria-label="Draft languages">
-      {% for item in drafts %}
-        <button class="tab-button{% if loop.first %} active{% endif %}" data-tab-target="draft-{{ item.draft.language }}" type="button">{{ item.draft.language|upper }}</button>
-      {% endfor %}
-    </div>
-
-    {% for item in drafts %}
-      <article id="draft-{{ item.draft.language }}" class="draft{% if not loop.first %} hidden{% endif %}">
-        <label>Subject<input id="subject-{{ item.draft.language }}" value="{{ item.draft.subject }}" readonly></label>
-        <label>Body<textarea id="body-{{ item.draft.language }}" rows="16" readonly>{{ item.draft.body }}</textarea></label>
-        <p class="draft-meta">Template {{ item.draft.template_version }} · Missing: {{ item.draft.missing_placeholders|join(', ') }}</p>
-        <div class="button-row">
-          <button class="button" type="button" data-copy="#subject-{{ item.draft.language }}">Copy subject</button>
-          <button class="button" type="button" data-copy="#body-{{ item.draft.language }}">Copy body</button>
-          <a class="button button-primary" href="{{ item.mailto }}" data-email-draft data-recipient="#email-recipient" data-subject="#subject-{{ item.draft.language }}" data-body="#body-{{ item.draft.language }}">Open addressed email</a>
-        </div>
-      </article>
-    {% endfor %}
-  </section>
+  <details id="case-management" class="panel case-details case-management" {% if lifecycle_error %}open{% endif %}>
+    <summary><span><strong>{{ t("case.management.title") }}</strong><small>{{ t("case.management.summary") }}</small></span></summary>
+    {% if lifecycle_error %}<div class="alert" role="alert">{{ lifecycle_error }}</div>{% endif %}
+    {% if case.state in ["closed", "mitigated", "false_positive", "transferred"] %}
+      <div class="case-closed-summary">
+        <span class="badge badge-safe">{{ t("state." ~ case.state.value) }}</span>
+        <p>{{ t("case.management.closed_help") }}</p>
+      </div>
+      <form action="/cases/{{ case.id }}/lifecycle" method="post" class="lifecycle-form">
+        <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
+        <input type="hidden" name="action" value="reopen">
+        <label>{{ t("case.management.operator") }}<input name="operator" maxlength="80" required placeholder="{{ t('case.management.operator_help') }}"></label>
+        <label>{{ t("case.management.reopen_reason") }}<textarea name="reason" rows="3" maxlength="1000" required></textarea></label>
+        <button class="button" type="submit">{{ t("case.management.reopen") }}</button>
+      </form>
+    {% else %}
+      <p>{{ t("case.management.close_help") }}</p>
+      <form action="/cases/{{ case.id }}/lifecycle" method="post" class="lifecycle-form">
+        <input type="hidden" name="_csrf_token" value="{{ form_csrf_token }}">
+        <input type="hidden" name="action" value="close">
+        <label>{{ t("case.management.resolution") }}
+          <select name="resolution">
+            <option value="closed">{{ t("state.closed") }}</option>
+            <option value="mitigated">{{ t("state.mitigated") }}</option>
+            <option value="false_positive">{{ t("state.false_positive") }}</option>
+            <option value="transferred">{{ t("state.transferred") }}</option>
+          </select>
+        </label>
+        <label>{{ t("case.management.operator") }}<input name="operator" maxlength="80" required placeholder="{{ t('case.management.operator_help') }}"></label>
+        <label class="lifecycle-reason">{{ t("case.management.close_reason") }}<textarea name="reason" rows="3" maxlength="1000" required></textarea></label>
+        <p class="lifecycle-reason callout">{{ t("case.management.monitoring_stop") }}</p>
+        <button class="button lifecycle-reason" type="submit">{{ t("case.management.close") }}</button>
+      </form>
+    {% endif %}
+  </details>
 {% endblock %}
