@@ -385,6 +385,15 @@ def _case_context(
         "https://lookup.icann.org/en/lookup?name="
         f"{quote(record.target.registrable_domain, safe='')}"
     )
+    rdap_authoritative_url = next(
+        (
+            observation.value
+            for observation in (latest_rdap_result.observations if latest_rdap_result else [])
+            if observation.name == "query_url"
+            and observation.value.startswith("https://")
+        ),
+        None,
+    )
     technical_review = None
     if latest_snapshot and latest_snapshot.next_check_due_at:
         technical_review = {
@@ -440,6 +449,7 @@ def _case_context(
         ),
         "rdap_manual_needed": rdap_manual_needed,
         "rdap_lookup_url": rdap_lookup_url,
+        "rdap_authoritative_url": rdap_authoritative_url,
         "manual_rdap_evidence": list(reversed(record.manual_evidence)),
         "collection_modal_open": bool(
             latest_collection_job

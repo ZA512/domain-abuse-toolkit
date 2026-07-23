@@ -39,7 +39,7 @@ class RdapCollectionError(ValueError):
 class RdapCollector:
     """Discover the authoritative RDAP service through IANA and capture public data."""
 
-    version = "1.0"
+    version = "1.1"
 
     def __init__(
         self,
@@ -94,6 +94,59 @@ class RdapCollector:
             query_url = urljoin(
                 base_url.rstrip("/") + "/", "domain/" + quote(domain, safe=".-")
             )
+        except RdapCollectionError as exc:
+            errors.append(
+                CollectorError(code=exc.code, message=str(exc), retryable=exc.retryable)
+            )
+            return self._output(
+                started_at,
+                CollectorStatus.FAILED,
+                observations,
+                errors,
+                artifacts,
+            )
+
+        bootstrap_path = f"10_snapshots/{snapshot_id}/rdap/iana-dns-bootstrap.json"
+        artifacts.append(
+            PendingArtifact(
+                relative_path=bootstrap_path,
+                content=bootstrap_bytes,
+                media_type="application/json",
+                source="IANA RDAP DNS bootstrap registry",
+                metadata={
+                    "collector": "rdap",
+                    "collector_version": self.version,
+                    "source_url": bootstrap_source,
+                    "selected_service_url": base_url,
+                    "query_url": query_url,
+                },
+            )
+        )
+        observations.extend(
+            [
+                CollectorObservation(
+                    category="rdap",
+                    name="bootstrap.version",
+                    value=_safe_value(bootstrap.get("version")),
+                ),
+                CollectorObservation(
+                    category="rdap",
+                    name="bootstrap.publication",
+                    value=_safe_value(bootstrap.get("publication")),
+                ),
+                CollectorObservation(
+                    category="rdap",
+                    name="bootstrap.service_url",
+                    value=base_url,
+                ),
+                CollectorObservation(
+                    category="rdap",
+                    name="query_url",
+                    value=query_url,
+                ),
+            ]
+        )
+        try:
             response_bytes, response, response_source = self._fetch_json(
                 query_url, deadline
             )
@@ -109,50 +162,22 @@ class RdapCollector:
                 artifacts,
             )
 
-        bootstrap_path = f"10_snapshots/{snapshot_id}/rdap/iana-dns-bootstrap.json"
         response_path = f"10_snapshots/{snapshot_id}/rdap/domain-response.json"
-        artifacts.extend(
-            [
-                PendingArtifact(
-                    relative_path=bootstrap_path,
-                    content=bootstrap_bytes,
-                    media_type="application/json",
-                    source="IANA RDAP DNS bootstrap registry",
-                    metadata={
-                        "collector": "rdap",
-                        "collector_version": self.version,
-                        "source_url": bootstrap_source,
-                    },
-                ),
-                PendingArtifact(
-                    relative_path=response_path,
-                    content=response_bytes,
-                    media_type="application/rdap+json",
-                    source="authoritative domain RDAP response",
-                    metadata={
-                        "collector": "rdap",
-                        "collector_version": self.version,
-                        "source_url": response_source,
-                        "queried_domain": domain,
-                    },
-                ),
-            ]
+        artifacts.append(
+            PendingArtifact(
+                relative_path=response_path,
+                content=response_bytes,
+                media_type="application/rdap+json",
+                source="authoritative domain RDAP response",
+                metadata={
+                    "collector": "rdap",
+                    "collector_version": self.version,
+                    "source_url": response_source,
+                    "queried_domain": domain,
+                },
+            )
         )
         observations.extend(_normalize_domain_response(response, response_source))
-        observations.extend(
-            [
-                CollectorObservation(
-                    category="rdap",
-                    name="bootstrap.version",
-                    value=_safe_value(bootstrap.get("version")),
-                ),
-                CollectorObservation(
-                    category="rdap",
-                    name="bootstrap.publication",
-                    value=_safe_value(bootstrap.get("publication")),
-                ),
-            ]
-        )
         return self._output(
             started_at,
             CollectorStatus.COMPLETE,
@@ -239,11 +264,20 @@ class RdapCollector:
                         "rdap_redirect_blocked", "An RDAP redirect URL was too long."
                     )
                 continue
+            if exchange.status == 429:
+                raise RdapCollectionError(
+                    "rdap_rate_limited",
+                    (
+                        "The authoritative RDAP endpoint selected through the IANA "
+                        "bootstrap registry returned HTTP status 429."
+                    ),
+                    retryable=True,
+                )
             if exchange.status != 200:
                 raise RdapCollectionError(
                     "rdap_http_status",
                     f"The RDAP endpoint returned HTTP status {exchange.status}.",
-                    retryable=exchange.status == 429 or exchange.status >= 500,
+                    retryable=exchange.status >= 500,
                 )
             if exchange.body_skipped_reason or not exchange.body:
                 raise RdapCollectionError(

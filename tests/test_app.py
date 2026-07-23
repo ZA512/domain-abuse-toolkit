@@ -246,6 +246,13 @@ def test_rdap_limitation_offers_manual_evidence_capture(client: TestClient) -> N
                     status=CollectorStatus.FAILED,
                     started_at=now,
                     finished_at=now,
+                    observations=[
+                        {
+                            "category": "rdap",
+                            "name": "query_url",
+                            "value": "https://rdap.example/rdap/domain/example.net",
+                        }
+                    ],
                     errors=[
                         {
                             "code": "rdap_http_status",
@@ -285,6 +292,8 @@ def test_rdap_limitation_offers_manual_evidence_capture(client: TestClient) -> N
         page.text,
     )
     assert "https://lookup.icann.org/en/lookup?name=example.net" in page.text
+    assert "https://rdap.example/rdap/domain/example.net" in page.text
+    assert "Open authoritative RDAP server" in page.text
     assert "raw RDAP response is available at the bottom" in page.text
 
     saved = client.post(

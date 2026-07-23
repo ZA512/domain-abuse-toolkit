@@ -147,6 +147,10 @@
                     <li>{{ t("case.evidence.manual_rdap.step3") }}</li>
                   </ol>
                   <a class="button" href="{{ rdap_lookup_url }}" target="_blank" rel="noopener noreferrer">{{ t("case.evidence.manual_rdap.open") }}</a>
+                  {% if rdap_authoritative_url %}
+                    <p class="manual-evidence-notice">{{ t("case.evidence.manual_rdap.authoritative_help") }}</p>
+                    <a class="button button-secondary" href="{{ rdap_authoritative_url }}" target="_blank" rel="noopener noreferrer">{{ t("case.evidence.manual_rdap.authoritative_open") }}</a>
+                  {% endif %}
                 </div>
               {% endif %}
 

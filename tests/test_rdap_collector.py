@@ -209,4 +209,53 @@ def test_rdap_rejects_a_truncated_response_without_persisting_it() -> None:
 
     assert output.result.status == CollectorStatus.FAILED
     assert output.result.errors[0].code == "rdap_response_too_large"
-    assert output.artifacts == []
+    assert len(output.artifacts) == 1
+    assert output.artifacts[0].relative_path.endswith("iana-dns-bootstrap.json")
+
+
+def test_rdap_uses_iana_tld_service_and_preserves_provenance_when_rate_limited() -> None:
+    resolver = FakeAddressResolver(
+        {
+            "data.iana.org": ("192.0.43.8",),
+            "rdap.gmoregistry.net": ("8.8.8.8",),
+        }
+    )
+    bootstrap = {
+        "version": "1.0",
+        "publication": "2026-07-23T00:00:00Z",
+        "services": [
+            [
+                ["bridgestone", "shop", "tokyo"],
+                ["https://rdap.gmoregistry.net/rdap/"],
+            ]
+        ],
+    }
+    client = FakeHttpClient(
+        [
+            _exchange("https://data.iana.org/rdap/dns.json", bootstrap),
+            _exchange(
+                "https://rdap.gmoregistry.net/rdap/domain/example.shop",
+                {"errorCode": 429},
+                status=429,
+            ),
+        ]
+    )
+
+    output = RdapCollector(address_resolver=resolver, client=client).collect(
+        normalize_target("https://www.example.shop/path"), "SNP-SHOP"
+    )
+
+    assert output.result.status == CollectorStatus.FAILED
+    assert output.result.errors[0].code == "rdap_rate_limited"
+    assert output.result.errors[0].retryable
+    observations = {item.name: item.value for item in output.result.observations}
+    assert (
+        observations["bootstrap.service_url"]
+        == "https://rdap.gmoregistry.net/rdap/"
+    )
+    assert (
+        observations["query_url"]
+        == "https://rdap.gmoregistry.net/rdap/domain/example.shop"
+    )
+    assert len(output.artifacts) == 1
+    assert output.artifacts[0].metadata["query_url"] == observations["query_url"]
