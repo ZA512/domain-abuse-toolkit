@@ -34,4 +34,4 @@ def test_french_can_be_selected_at_startup(tmp_path, monkeypatch) -> None:  # ty
 
     assert response.status_code == 200
     assert '<html lang="fr">' in response.text
-    assert "Transformez une URL suspecte en dossier exploitable" in response.text
+    assert "Que faut-il traiter maintenant" in response.text

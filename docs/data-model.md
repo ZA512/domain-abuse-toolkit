@@ -81,6 +81,13 @@ checks for one case. It records the interval and decision time. Enabling require
 explicit continuous-authorization confirmation. The current case projection also keeps
 the enabled state, interval, and authorization time used to calculate the next due check.
 
+### Case lifecycle event
+
+An immutable operator decision that closes or reopens a case. It records the previous and
+resulting state, resolution, operator, reason and timestamp. Closing never deletes evidence or
+history and disables recurring monitoring; reopening derives the active state again from the
+recorded qualification and submissions, but does not restore network authorization.
+
 ### Campaign
 
 A confirmed grouping of cases with name, owner, state, criticality, and notes. Proposed correlations are stored separately until accepted.
@@ -106,6 +113,7 @@ Brand profile 1---* Case *---0..1 Campaign
                        |       |
                        |       +---0..1 proof Artifact
                        +---* Submission event
+                       +---* Case lifecycle event
                        +---* Audit event
 
 Party 1---* Reporting channel

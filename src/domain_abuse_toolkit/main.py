@@ -19,6 +19,8 @@ from domain_abuse_toolkit.models import (
     ActionEvent,
     ActionUpdate,
     CaseCreate,
+    CaseLifecycleEvent,
+    CaseLifecycleUpdate,
     CaseState,
     CollectionStart,
     CollectorStatus,
@@ -36,6 +38,7 @@ from domain_abuse_toolkit.models import (
 from domain_abuse_toolkit.security.targets import TargetValidationError, normalize_target
 from domain_abuse_toolkit.services.cases import (
     ActionNotFoundError,
+    CaseLifecycleValidationError,
     CaseNotFoundError,
     CaseService,
     ManualEvidenceValidationError,
@@ -299,6 +302,7 @@ def _case_context(
     collection_error: str | None = None,
     manual_evidence_error: str | None = None,
     monitoring_error: str | None = None,
+    lifecycle_error: str | None = None,
 ) -> dict[str, object]:
     selected_translator = _request_translator(request)
     try:
@@ -359,6 +363,8 @@ def _case_context(
             history.append({"kind": "manual_evidence", "event": event})
         elif isinstance(event, MonitoringEvent):
             history.append({"kind": "monitoring", "event": event})
+        elif isinstance(event, CaseLifecycleEvent):
+            history.append({"kind": "lifecycle", "event": event})
         else:
             history.append({"kind": "submission", "event": event})
     integrity_errors = case_service.evidence_store.verify_case(case_id)
@@ -425,6 +431,7 @@ def _case_context(
         "collection_error": collection_error,
         "manual_evidence_error": manual_evidence_error,
         "monitoring_error": monitoring_error,
+        "lifecycle_error": lifecycle_error,
         "form_csrf_token": form_csrf_token,
         "integrity_errors": integrity_errors,
         "artifact_count": artifact_count,
@@ -507,6 +514,108 @@ def _case_counts(cases: list[object]) -> dict[str, int]:
     }
 
 
+_CLOSED_CASE_STATES = {
+    CaseState.MITIGATED,
+    CaseState.CLOSED,
+    CaseState.FALSE_POSITIVE,
+    CaseState.TRANSFERRED,
+}
+
+
+def _home_context(
+    request: Request,
+    *,
+    error: str | None = None,
+    form: dict[str, object] | None = None,
+) -> dict[str, object]:
+    all_cases = case_service.list()
+    now = datetime.now(UTC)
+    active_cases = [
+        case for case in all_cases if case.state not in _CLOSED_CASE_STATES
+    ]
+    closed_cases = [
+        case for case in all_cases if case.state in _CLOSED_CASE_STATES
+    ]
+    review_status = {
+        case.id: _technical_review_status(case, now) for case in all_cases
+    }
+    operational_status = {
+        case.id: {
+            "availability": availability_status(case),
+            "next_action": _display_process_action(case, now),
+            "monitoring_due_at": next_monitoring_due_at(case),
+        }
+        for case in all_cases
+    }
+
+    def needs_attention(case: object) -> bool:
+        review = review_status[case.id]
+        action = operational_status[case.id]["next_action"]
+        availability = operational_status[case.id]["availability"]
+        return bool(
+            case.state in {CaseState.NEEDS_VALIDATION, CaseState.BLOCKED}
+            or (review and review["overdue"])
+            or (action and action.overdue)
+            or availability.state == "down"
+        )
+
+    attention_cases = [case for case in active_cases if needs_attention(case)]
+    attention_ids = {case.id for case in attention_cases}
+    waiting_cases = [
+        case
+        for case in active_cases
+        if case.id not in attention_ids and case.state == CaseState.WAITING_EXTERNAL
+    ]
+    waiting_ids = {case.id for case in waiting_cases}
+    upcoming_cases = [
+        case
+        for case in active_cases
+        if case.id not in attention_ids and case.id not in waiting_ids
+    ]
+
+    def queue_sort_key(case: object) -> tuple[datetime, int, datetime]:
+        action = operational_status[case.id]["next_action"]
+        review = review_status[case.id]
+        due_dates = [
+            value
+            for value in (
+                action.due_at if action else None,
+                review["due_at"] if review else None,
+                operational_status[case.id]["monitoring_due_at"],
+            )
+            if value is not None
+        ]
+        next_due = min(due_dates) if due_dates else datetime.max.replace(tzinfo=UTC)
+        criticality_rank = 0 if case.criticality_proposed == Criticality.CRITICAL else 1
+        return next_due, criticality_rank, case.created_at
+
+    attention_cases.sort(key=queue_sort_key)
+    waiting_cases.sort(key=queue_sort_key)
+    upcoming_cases.sort(key=queue_sort_key)
+    closed_cases.sort(key=lambda item: item.updated_at, reverse=True)
+    counts = _case_counts(active_cases)
+    counts["closed"] = len(closed_cases)
+    counts["attention"] = len(attention_cases)
+    counts["waiting"] = len(waiting_cases)
+    return {
+        "request": request,
+        "cases": active_cases,
+        "attention_cases": attention_cases,
+        "waiting_cases": waiting_cases,
+        "upcoming_cases": upcoming_cases,
+        "closed_cases": closed_cases,
+        "case_review_status": review_status,
+        "case_operational_status": operational_status,
+        "case_counts": counts,
+        "capabilities": case_service.capabilities(settings),
+        "load_warnings": case_service.load_warnings,
+        "error": error,
+        "form": form or {},
+        "form_csrf_token": form_csrf_token,
+        **_ui_context(request),
+    }
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "version": __version__}
@@ -514,34 +623,10 @@ def health() -> dict[str, str]:
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):  # type: ignore[no-untyped-def]
-    cases = case_service.list()
-    now = datetime.now(UTC)
-    operational_status = {
-        case.id: {
-            "availability": availability_status(case),
-            "next_action": _display_process_action(case, now),
-            "monitoring_due_at": next_monitoring_due_at(case),
-        }
-        for case in cases
-    }
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={
-            "request": request,
-            "cases": cases,
-            "case_review_status": {
-                case.id: _technical_review_status(case, now) for case in cases
-            },
-            "case_operational_status": operational_status,
-            "case_counts": _case_counts(cases),
-            "capabilities": case_service.capabilities(settings),
-            "load_warnings": case_service.load_warnings,
-            "error": None,
-            "form": {},
-            "form_csrf_token": form_csrf_token,
-            **_ui_context(request),
-        },
+        context=_home_context(request),
     )
 
 
@@ -591,34 +676,14 @@ def create_case_form(
     try:
         record = case_service.create(intake)
     except TargetValidationError as exc:
-        cases = case_service.list()
-        now = datetime.now(UTC)
-        operational_status = {
-            case.id: {
-                "availability": availability_status(case),
-                "next_action": _display_process_action(case, now),
-                "monitoring_due_at": next_monitoring_due_at(case),
-            }
-            for case in cases
-        }
         return templates.TemplateResponse(
             request=request,
             name="index.html",
-            context={
-                "request": request,
-                "cases": cases,
-                "case_review_status": {
-                    case.id: _technical_review_status(case, now) for case in cases
-                },
-                "case_operational_status": operational_status,
-                "case_counts": _case_counts(cases),
-                "capabilities": case_service.capabilities(settings),
-                "load_warnings": case_service.load_warnings,
-                "error": str(exc),
-                "form": intake.model_dump(mode="json"),
-                "form_csrf_token": form_csrf_token,
-                **_ui_context(request),
-            },
+            context=_home_context(
+                request,
+                error=str(exc),
+                form=intake.model_dump(mode="json"),
+            ),
             status_code=422,
         )
     return RedirectResponse(url=f"/cases/{record.id}#evidence", status_code=303)
@@ -633,6 +698,7 @@ def case_detail(
     collection_error: str | None = None,
     manual_evidence_error: str | None = None,
     monitoring_error: str | None = None,
+    lifecycle_error: str | None = None,
 ):  # type: ignore[no-untyped-def]
     return templates.TemplateResponse(
         request=request,
@@ -645,7 +711,42 @@ def case_detail(
             collection_error,
             manual_evidence_error,
             monitoring_error,
+            lifecycle_error,
         ),
+    )
+
+
+@app.post("/cases/{case_id}/lifecycle")
+def change_case_lifecycle_form(
+    case_id: str,
+    action: Annotated[str, Form(pattern=r"^(close|reopen)$")],
+    operator: Annotated[str, Form(min_length=1, max_length=80)],
+    reason: Annotated[str, Form(min_length=1, max_length=1000)],
+    resolution: Annotated[CaseState | None, Form()] = None,
+    csrf_token: Annotated[str, Form(alias="_csrf_token")] = "",
+) -> RedirectResponse:
+    _verify_form_csrf(csrf_token)
+    try:
+        case_service.change_lifecycle(
+            case_id,
+            CaseLifecycleUpdate(
+                action=action,
+                operator=operator,
+                reason=reason,
+                resolution=resolution,
+            ),
+        )
+    except CaseLifecycleValidationError as exc:
+        return RedirectResponse(
+            url=(
+                f"/cases/{case_id}?"
+                f"{urlencode({'lifecycle_error': str(exc)})}#case-management"
+            ),
+            status_code=303,
+        )
+    return RedirectResponse(
+        url=f"/cases/{case_id}#case-management",
+        status_code=303,
     )
 
 

@@ -24,6 +24,16 @@ if (collectionDialog) {
     warning: collectionDialog.dataset.statusWarning,
     failed: collectionDialog.dataset.statusFailed,
   };
+  const clearCollectionJobFromUrl = () => {
+    const currentUrl = new URL(window.location.href);
+    if (!currentUrl.searchParams.has("collection_job")) return;
+    currentUrl.searchParams.delete("collection_job");
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`,
+    );
+  };
 
   const setStageState = (element, state) => {
     element.classList.remove("stage-pending", "stage-running", "stage-complete", "stage-warning", "stage-failed");
@@ -72,6 +82,7 @@ if (collectionDialog) {
       liveIndicator?.classList.add("is-complete");
       finishLink?.classList.remove("hidden");
       if (closeButton) closeButton.hidden = true;
+      clearCollectionJobFromUrl();
       if (!collectionDialog.open && collectionDialog.showModal) {
         collectionDialog.showModal();
       }
@@ -106,7 +117,10 @@ if (collectionDialog) {
     window.setTimeout(refreshCollection, 800);
   };
 
-  closeButton?.addEventListener("click", () => collectionDialog.close());
+  closeButton?.addEventListener("click", () => {
+    collectionDialog.close();
+    clearCollectionJobFromUrl();
+  });
   finishLink?.addEventListener("click", (event) => {
     event.preventDefault();
     if (collectionDialog.open) collectionDialog.close();
@@ -116,6 +130,29 @@ if (collectionDialog) {
     collectionDialog.showModal();
   }
   refreshCollection();
+}
+
+const caseSearch = document.querySelector("[data-case-search]");
+if (caseSearch) {
+  const rows = [...document.querySelectorAll("[data-case-row]")];
+  const groups = [...document.querySelectorAll("[data-case-group]")];
+  const empty = document.querySelector("[data-case-search-empty]");
+  caseSearch.addEventListener("input", () => {
+    const query = caseSearch.value.trim().toLocaleLowerCase();
+    let visibleCount = 0;
+    rows.forEach((row) => {
+      const matches = !query || row.dataset.caseSearchValue.includes(query);
+      row.classList.toggle("hidden", !matches);
+      if (matches) visibleCount += 1;
+    });
+    groups.forEach((group) => {
+      const hasVisibleRow = [...group.querySelectorAll("[data-case-row]")]
+        .some((row) => !row.classList.contains("hidden"));
+      group.classList.toggle("search-hidden", query && !hasVisibleRow);
+      if (query && hasVisibleRow && group.tagName === "DETAILS") group.open = true;
+    });
+    empty?.classList.toggle("hidden", visibleCount !== 0);
+  });
 }
 
 document.addEventListener("click", async (event) => {
@@ -192,8 +229,8 @@ if (workflowRoot) {
     const requested = hashStep === "actions"
       ? workflowRoot.dataset.defaultStep
       : hashStep;
-    if (requested === "case-details") {
-      document.getElementById("case-details")?.setAttribute("open", "");
+    if (["case-details", "case-management"].includes(requested)) {
+      document.getElementById(requested)?.setAttribute("open", "");
       return;
     }
     if (!showWorkflowStep(requested, focusPanel)) {

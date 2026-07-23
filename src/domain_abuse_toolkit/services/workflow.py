@@ -47,6 +47,12 @@ def build_case_workflow(
     latest_snapshot = record.snapshots[-1] if record.snapshots else None
     latest_submission = record.submissions[-1] if record.submissions else None
     job_status = str(getattr(latest_collection_job, "status", ""))
+    case_is_closed = record.state in {
+        CaseState.MITIGATED,
+        CaseState.CLOSED,
+        CaseState.FALSE_POSITIVE,
+        CaseState.TRANSFERRED,
+    }
 
     evidence_state = "to_do"
     evidence_summary = t("workflow.evidence.none")
@@ -83,12 +89,7 @@ def build_case_workflow(
 
     follow_up_state = "to_do"
     follow_up_summary = t("workflow.follow_up.waiting")
-    if record.state in {
-        CaseState.MITIGATED,
-        CaseState.CLOSED,
-        CaseState.FALSE_POSITIVE,
-        CaseState.TRANSFERRED,
-    }:
+    if case_is_closed:
         follow_up_state = "complete"
         follow_up_summary = t("workflow.follow_up.complete")
     elif latest_submission:
@@ -110,7 +111,9 @@ def build_case_workflow(
     evidence_requires_action = bool(
         latest_snapshot and snapshot_outcome(latest_snapshot) == "action_required"
     )
-    if (
+    if case_is_closed:
+        current_step_id = "overview"
+    elif (
         job_status in {"queued", "running"}
         or (network_collection_enabled and latest_snapshot is None)
         or evidence_requires_action
@@ -146,6 +149,12 @@ def build_case_workflow(
     )
 
     next_actions = {
+        "overview": (
+            t("workflow.next.closed.title"),
+            t("workflow.next.closed.detail"),
+            "#case-management",
+            t("workflow.next.closed.button"),
+        ),
         "evidence": (
             t("workflow.next.evidence.title"),
             evidence_summary,

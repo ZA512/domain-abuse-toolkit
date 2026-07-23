@@ -12,6 +12,8 @@ from domain_abuse_toolkit.models import (
     ActionEvent,
     CapabilityStatus,
     CaseCreate,
+    CaseLifecycleEvent,
+    CaseLifecycleUpdate,
     CaseRecord,
     CaseState,
     Criticality,
@@ -55,6 +57,28 @@ class ManualEvidenceValidationError(ValueError):
     pass
 
 
+class CaseLifecycleValidationError(ValueError):
+    pass
+
+
+CaseEvent = (
+    ActionEvent
+    | QualificationEvent
+    | SubmissionEvent
+    | ManualEvidenceEvent
+    | MonitoringEvent
+    | CaseLifecycleEvent
+    | SnapshotEvent
+)
+
+_TERMINAL_STATES = {
+    CaseState.CLOSED,
+    CaseState.MITIGATED,
+    CaseState.FALSE_POSITIVE,
+    CaseState.TRANSFERRED,
+}
+
+
 class CaseService:
     """Local case service backed by integrity-checked records in the evidence store."""
 
@@ -62,17 +86,7 @@ class CaseService:
         self.evidence_store = evidence_store
         self.drafts = drafts
         self._cases: dict[str, CaseRecord] = {}
-        self._events: dict[
-            str,
-            list[
-                ActionEvent
-                | QualificationEvent
-                | SubmissionEvent
-                | ManualEvidenceEvent
-                | MonitoringEvent
-                | SnapshotEvent
-            ],
-        ] = {}
+        self._events: dict[str, list[CaseEvent]] = {}
         self._lock = threading.Lock()
         self.load_warnings: list[str] = []
         self._load_existing_cases()
@@ -97,14 +111,7 @@ class CaseService:
             ) as exc:
                 self.load_warnings.append(f"{case_id}: {exc}")
                 continue
-            events: list[
-                ActionEvent
-                | QualificationEvent
-                | SubmissionEvent
-                | ManualEvidenceEvent
-                | MonitoringEvent
-                | SnapshotEvent
-            ] = []
+            events: list[CaseEvent] = []
             try:
                 event_paths = self.evidence_store.list_original_paths(
                     case_id, "00_case/events"
@@ -123,14 +130,7 @@ class CaseService:
                     if not isinstance(raw_event, dict):
                         raise ValueError("invalid event payload")
                     if raw_event.get("event_type") == "action_status_changed":
-                        event: (
-                            ActionEvent
-                            | QualificationEvent
-                            | SubmissionEvent
-                            | ManualEvidenceEvent
-                            | MonitoringEvent
-                            | SnapshotEvent
-                        ) = ActionEvent.model_validate(raw_event)
+                        event: CaseEvent = ActionEvent.model_validate(raw_event)
                     elif raw_event.get("event_type") == "qualification_recorded":
                         event = QualificationEvent.model_validate(raw_event)
                     elif raw_event.get("event_type") == "report_submission_recorded":
@@ -139,6 +139,8 @@ class CaseService:
                         event = ManualEvidenceEvent.model_validate(raw_event)
                     elif raw_event.get("event_type") == "monitoring_configured":
                         event = MonitoringEvent.model_validate(raw_event)
+                    elif raw_event.get("event_type") == "case_lifecycle_changed":
+                        event = CaseLifecycleEvent.model_validate(raw_event)
                     elif raw_event.get("event_type") == "snapshot_recorded":
                         event = SnapshotEvent.model_validate(raw_event)
                     else:
@@ -155,6 +157,8 @@ class CaseService:
                         self._apply_manual_evidence_event(record, event)
                     elif isinstance(event, MonitoringEvent):
                         self._apply_monitoring_event(record, event)
+                    elif isinstance(event, CaseLifecycleEvent):
+                        self._apply_lifecycle_event(record, event)
                     else:
                         self._apply_snapshot_event(record, event)
                 except (
@@ -284,6 +288,8 @@ class CaseService:
 
     @staticmethod
     def _refresh_state(record: CaseRecord) -> None:
+        if record.state in _TERMINAL_STATES:
+            return
         if record.submissions:
             record.state = CaseState.WAITING_EXTERNAL
             return
@@ -472,6 +478,72 @@ class CaseService:
                 source="operator monitoring configuration",
             )
             self._apply_monitoring_event(record, event)
+            self._events.setdefault(case_id, []).append(event)
+            return record
+
+    @staticmethod
+    def _apply_lifecycle_event(
+        record: CaseRecord, event: CaseLifecycleEvent
+    ) -> None:
+        record.state = event.new_state
+        if event.new_state in _TERMINAL_STATES:
+            record.monitoring_enabled = False
+            record.monitoring_authorized_at = None
+        record.updated_at = max(record.updated_at, event.occurred_at)
+
+    def change_lifecycle(
+        self, case_id: str, update: CaseLifecycleUpdate
+    ) -> CaseRecord:
+        with self._lock:
+            try:
+                record = self._cases[case_id]
+            except KeyError as exc:
+                raise CaseNotFoundError(case_id) from exc
+
+            if update.action == "close":
+                resolution = update.resolution or CaseState.CLOSED
+                if resolution not in _TERMINAL_STATES:
+                    raise CaseLifecycleValidationError(
+                        "The selected resolution is not a closing state."
+                    )
+                if record.state in _TERMINAL_STATES:
+                    raise CaseLifecycleValidationError("The case is already closed.")
+                new_state = resolution
+            else:
+                if record.state not in _TERMINAL_STATES:
+                    raise CaseLifecycleValidationError("The case is already active.")
+                candidate = record.model_copy(deep=True)
+                candidate.state = CaseState.NEW
+                self._refresh_state(candidate)
+                new_state = candidate.state
+
+            now = datetime.now(UTC)
+            event = CaseLifecycleEvent(
+                id=f"EVT-{uuid.uuid4().hex.upper()}",
+                case_id=case_id,
+                action=update.action,
+                previous_state=record.state,
+                new_state=new_state,
+                operator=update.operator,
+                reason=update.reason,
+                occurred_at=now,
+            )
+            payload = {
+                "schema_version": "1.0",
+                "event": event.model_dump(mode="json"),
+                "notice": "Immutable operator-confirmed case lifecycle event.",
+            }
+            event_path = (
+                f"00_case/events/{now:%Y%m%dT%H%M%S.%fZ}-{event.id}.json"
+            )
+            self.evidence_store.write_original(
+                case_id,
+                event_path,
+                (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode(),
+                media_type="application/json",
+                source="operator-confirmed case lifecycle decision",
+            )
+            self._apply_lifecycle_event(record, event)
             self._events.setdefault(case_id, []).append(event)
             return record
 
@@ -671,16 +743,7 @@ class CaseService:
             self._events.setdefault(case_id, []).append(event)
             return record
 
-    def history(
-        self, case_id: str
-    ) -> list[
-        ActionEvent
-        | QualificationEvent
-        | SubmissionEvent
-        | ManualEvidenceEvent
-        | MonitoringEvent
-        | SnapshotEvent
-    ]:
+    def history(self, case_id: str) -> list[CaseEvent]:
         if case_id not in self._cases:
             raise CaseNotFoundError(case_id)
         return list(reversed(self._events.get(case_id, [])))

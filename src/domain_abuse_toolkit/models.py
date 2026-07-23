@@ -129,6 +129,45 @@ class MonitoringEvent(BaseModel):
     occurred_at: datetime
 
 
+class CaseLifecycleUpdate(BaseModel):
+    action: Literal["close", "reopen"]
+    operator: str = Field(min_length=1, max_length=80)
+    reason: str = Field(min_length=1, max_length=1000)
+    resolution: CaseState | None = None
+
+    @field_validator("operator")
+    @classmethod
+    def validate_lifecycle_operator(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Operator must not be blank.")
+        if any(ord(character) < 32 or ord(character) == 127 for character in normalized):
+            raise ValueError("Operator must not contain control characters.")
+        return normalized
+
+    @field_validator("reason")
+    @classmethod
+    def validate_lifecycle_reason(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("A lifecycle reason is required.")
+        if any(ord(character) < 32 and character not in "\r\n\t" for character in normalized):
+            raise ValueError("Lifecycle reason contains a prohibited control character.")
+        return normalized
+
+
+class CaseLifecycleEvent(BaseModel):
+    id: str
+    case_id: str
+    event_type: Literal["case_lifecycle_changed"] = "case_lifecycle_changed"
+    action: Literal["close", "reopen"]
+    previous_state: CaseState
+    new_state: CaseState
+    operator: str = Field(min_length=1, max_length=80)
+    reason: str = Field(min_length=1, max_length=1000)
+    occurred_at: datetime
+
+
 class QualificationSubmission(BaseModel):
     brand_represented: bool
     copied_elements: bool

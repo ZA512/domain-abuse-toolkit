@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from domain_abuse_toolkit.models import (
     CaseCreate,
+    CaseLifecycleUpdate,
     CaseState,
     Criticality,
     MonitoringUpdate,
@@ -66,6 +67,61 @@ def test_cases_are_restored_from_verified_local_records(tmp_path) -> None:  # ty
     assert restarted_service.get(created.id) == created
     assert [case.id for case in restarted_service.list()] == [created.id]
     assert restarted_service.load_warnings == []
+
+
+def test_case_lifecycle_is_audited_persistent_and_stops_monitoring(
+    tmp_path,
+) -> None:  # type: ignore[no-untyped-def]
+    service = CaseService(EvidenceStore(tmp_path), DraftService())
+    case = service.create(
+        CaseCreate(
+            target="https://test.example.net/",
+            brand="Test Brand",
+            legit_url="https://www.example.com/",
+        )
+    )
+    service.configure_monitoring(
+        case.id,
+        MonitoringUpdate(
+            enabled=True,
+            confirmed_authorized=True,
+            interval_hours=24,
+        ),
+    )
+
+    service.change_lifecycle(
+        case.id,
+        CaseLifecycleUpdate(
+            action="close",
+            resolution=CaseState.CLOSED,
+            operator="MG",
+            reason="Test case no longer needs operational follow-up.",
+        ),
+    )
+
+    assert case.state == CaseState.CLOSED
+    assert not case.monitoring_enabled
+    assert case.monitoring_authorized_at is None
+    closed_event = service.history(case.id)[0]
+    assert closed_event.event_type == "case_lifecycle_changed"
+    assert closed_event.previous_state == CaseState.NEEDS_VALIDATION
+
+    restarted = CaseService(EvidenceStore(tmp_path), DraftService())
+    restored = restarted.get(case.id)
+    assert restored.state == CaseState.CLOSED
+    assert not restored.monitoring_enabled
+
+    restarted.change_lifecycle(
+        case.id,
+        CaseLifecycleUpdate(
+            action="reopen",
+            operator="MG",
+            reason="Resume the investigation.",
+        ),
+    )
+    assert restored.state == CaseState.NEEDS_VALIDATION
+    assert restarted.history(case.id)[0].action == "reopen"
+    assert restarted.evidence_store.verify_case(case.id) == []
 
 
 def test_manual_rdap_evidence_is_integrity_checked_and_survives_restart(

@@ -1,5 +1,9 @@
 # Guided operator workflow
 
+This implementation note applies the repository-wide
+[UX/UI doctrine](ux-ui-doctrine.md). The doctrine and the current page classifications take
+precedence when a screen is changed.
+
 ## Problem to solve
 
 The functional local pilot currently exposes most case tools on one long page. The content is visually consistent, but the operator must infer the process, locate the next action, and distinguish finished work from optional or future work. The final UX must present a workflow rather than a catalogue of features.

@@ -41,7 +41,11 @@ def test_health_and_home(client: TestClient) -> None:
 
     home = client.get("/")
     assert home.status_code == 200
-    assert "Turn a suspicious URL into an actionable case" in home.text
+    assert "What needs attention now?" in home.text
+    assert home.text.index('class="panel work-queue"') < home.text.index(
+        'id="new-case"'
+    )
+    assert 'data-case-search' in home.text
     assert '<select id="ui-language" name="locale"' in home.text
     assert "English" in home.text and "Français" in home.text
     assert home.headers["x-frame-options"] == "DENY"
@@ -65,8 +69,64 @@ def test_language_can_be_changed_from_the_web_interface(client: TestClient) -> N
     assert "dat_ui_language=fr" in changed.headers["set-cookie"]
     french = client.get("/")
     assert '<html lang="fr">' in french.text
-    assert "Transformez une URL suspecte en dossier exploitable" in french.text
+    assert "Que faut-il traiter maintenant" in french.text
     assert "Copié" in french.text
+
+
+def test_case_can_be_closed_and_reopened_from_the_web_interface(
+    client: TestClient,
+) -> None:
+    created = client.post(
+        "/api/v1/cases",
+        json={
+            "target": "https://test.example.net/",
+            "brand": "Test Brand",
+            "legit_url": "https://www.example.com/",
+        },
+    ).json()
+    case_path = f"/cases/{created['id']}"
+
+    detail = client.get(case_path)
+    assert "Manage case" in detail.text
+    assert "Close case" in detail.text
+
+    closed = client.post(
+        f"{case_path}/lifecycle",
+        data={
+            "_csrf_token": _csrf_token(client, case_path),
+            "action": "close",
+            "resolution": "closed",
+            "operator": "MG",
+            "reason": "Test case created during validation.",
+        },
+        follow_redirects=False,
+    )
+    assert closed.status_code == 303
+    assert closed.headers["location"] == f"{case_path}#case-management"
+
+    closed_detail = client.get(case_path)
+    assert "This case remains readable and exportable" in closed_detail.text
+    assert "Reopen case" in closed_detail.text
+    assert "No operational action is expected" in closed_detail.text
+    assert 'data-default-step="overview"' in closed_detail.text
+    home = client.get("/")
+    assert "Closed cases" in home.text
+    assert created["id"] in home.text
+
+    reopened = client.post(
+        f"{case_path}/lifecycle",
+        data={
+            "_csrf_token": _csrf_token(client, case_path),
+            "action": "reopen",
+            "operator": "MG",
+            "reason": "Continue operational validation.",
+        },
+        follow_redirects=False,
+    )
+    assert reopened.status_code == 303
+    reopened_detail = client.get(case_path)
+    assert "Close case" in reopened_detail.text
+    assert "Case reopened" in reopened_detail.text
 
 
 def test_language_change_rejects_invalid_input_and_external_redirects(
@@ -181,6 +241,9 @@ def test_passive_collection_opens_live_progress_dialog(client: TestClient) -> No
     assert status.status_code == 200
     assert status.json()["job"]["current_stage"] == "http_tls"
     assert not status.json()["terminal"]
+    script = client.get("/static/app.js")
+    assert "clearCollectionJobFromUrl" in script.text
+    assert 'currentUrl.searchParams.delete("collection_job")' in script.text
 
 
 def test_rdap_limitation_offers_manual_evidence_capture(client: TestClient) -> None:
